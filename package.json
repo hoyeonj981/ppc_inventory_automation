@@ -1,8 +1,25 @@
 {
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run types && npm run typecheck && npm test",
+    "deploy": "wrangler deploy"
+  },
   "dependencies": {
-    "slack-cli": "^1.0.18"
+    "jose": "^6.2.12"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.1.6",
+    "@types/node": "^22.20.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
     "wrangler": "^4.130.0"
+  },
+  "overrides": {
+    "sharp": "0.35.4"
   }
 }
