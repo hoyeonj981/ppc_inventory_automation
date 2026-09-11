@@ -1,5 +1,6 @@
 import { INVENTORY_CALLBACK_ID, inventoryConfirmation, parseInventoryValues } from "./inventory";
 import { verifySlackRequest } from "./verify";
+import { getSlackUserName } from "./users";
 
 export async function handleSlackInteraction(request: Request): Promise<Response> {
   const receivedAt = new Date(Date.now()).toISOString();
@@ -39,5 +40,6 @@ export async function handleSlackInteraction(request: Request): Promise<Response
     return Response.json({ response_action: "errors", errors: result.errors });
   }
 
-  return Response.json({ response_action: "update", view: inventoryConfirmation(result.record) });
+  const foundByName = await getSlackUserName(result.record.foundBy);
+  return Response.json({ response_action: "update", view: inventoryConfirmation(result.record, foundByName) });
 }

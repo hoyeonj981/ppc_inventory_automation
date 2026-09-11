@@ -39,11 +39,14 @@ function requestFor(payload: unknown) {
 }
 
 async function send(request: Request) {
-  return await withEnv({ SLACK_SIGNING_SECRET: secret }, () => worker.fetch(request)) as Response;
+  return await withEnv({ SLACK_SIGNING_SECRET: secret, SLACK_BOT_TOKEN: "xoxb-test" }, () => worker.fetch(request)) as Response;
 }
 
 describe("inventory submission", () => {
-  beforeEach(() => vi.spyOn(Date, "now").mockReturnValue(now * 1000));
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(now * 1000);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: true, user: { profile: {} } }));
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("preserves barcode zeros, normalizes location, and records submitter and submission time", () => {
@@ -77,6 +80,63 @@ describe("inventory submission", () => {
     const response = await send(requestFor(payload));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ response_action: "errors", errors: { quantity: expect.any(String) } });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ display_name: " 호연 ", real_name: "장호연" }, "호연"],
+    [{ display_name: " ", real_name: " 장호연 " }, "장호연"],
+    [{ display_name: null, real_name: "장호연" }, "장호연"],
+    [{}, "U_SUBMITTER"],
+    [{ display_name: 123, real_name: null }, "U_SUBMITTER"],
+  ])("uses the submitting user's profile name with fallbacks: %j", async (profile, name) => {
+    vi.mocked(fetch).mockResolvedValue(Response.json({ ok: true, user: { profile } }));
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const response = await send(requestFor(submission()));
+    expect(response.status).toBe(200);
+    const result = await response.json() as { response_action: string; view: { blocks: { text: { text: string } }[] } };
+    expect(result.response_action).toBe("update");
+    expect(result.view.blocks[0].text.text).toContain(`발견자: ${name}`);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      "https://slack.com/api/users.info?user=U_SUBMITTER",
+      expect.objectContaining({ headers: { Authorization: "Bearer xoxb-test" }, signal: expect.any(AbortSignal) }),
+    );
+    expect(timeout).toHaveBeenCalledWith(1000);
+  });
+
+  it.each([
+    [200, { ok: false, error: "missing_scope" }],
+    [429, { ok: false, error: "ratelimited" }],
+    [503, { ok: true, user: { profile: { display_name: "무시할 이름" } } }],
+    [200, null],
+  ])("still confirms with Slack ID when profile lookup fails: %s %j", async (status, body) => {
+    vi.mocked(fetch).mockResolvedValue(Response.json(body, { status }));
+    const response = await send(requestFor(submission()));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ response_action: "update", view: {
+      blocks: expect.arrayContaining([expect.objectContaining({ text: expect.objectContaining({ text: expect.stringContaining("발견자: U_SUBMITTER") }) })]),
+    } });
+  });
+
+  it.each([new Error("Network failure"), new DOMException("Timed out", "TimeoutError")])("still confirms when profile lookup rejects: %s", async (error) => {
+    vi.mocked(fetch).mockRejectedValue(error);
+    const response = await send(requestFor(submission()));
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(await response.json())).toContain("발견자: U_SUBMITTER");
+  });
+
+  it("still confirms when the profile response is not JSON", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("not JSON"));
+    const response = await send(requestFor(submission()));
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(await response.json())).toContain("발견자: U_SUBMITTER");
+  });
+
+  it("still confirms without a bot token and does not call Slack", async () => {
+    const response = await withEnv({ SLACK_SIGNING_SECRET: secret, SLACK_BOT_TOKEN: "" }, () => worker.fetch(requestFor(submission()))) as Response;
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(await response.json())).toContain("발견자: U_SUBMITTER");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("returns block-specific errors for all invalid fields", async () => {
@@ -117,6 +177,7 @@ describe("inventory submission", () => {
     const parse = vi.spyOn(request, "formData");
     expect((await send(request)).status).toBe(401);
     expect(parse).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("rejects a submission without a Slack user ID", async () => {

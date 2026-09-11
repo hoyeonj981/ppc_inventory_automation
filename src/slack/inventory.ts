@@ -66,7 +66,7 @@ export const inventoryModal = {
       type: "context",
       elements: [
         plainText(
-          "발견자는 제출자의 Slack ID, 발견시각은 제출 요청 수신 시각으로 자동 기록됩니다. 현재는 입력 확인만 가능하며 데이터는 저장되지 않습니다.",
+          "발견자는 제출자의 Slack 프로필 이름으로 표시됩니다(조회 실패 시 Slack ID). 발견시각은 제출 요청 수신 시각입니다. 현재는 입력 확인만 가능하며 데이터는 저장되지 않습니다.",
         ),
       ],
     },
@@ -169,7 +169,7 @@ export function parseInventoryValues(
   };
 }
 
-export function inventoryConfirmation(record: InventoryRecord) {
+export function inventoryConfirmation(record: InventoryRecord, foundByName = record.foundBy) {
   const foundAt = new Date(record.foundAt).toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
     hour12: false,
@@ -187,7 +187,7 @@ export function inventoryConfirmation(record: InventoryRecord) {
             `수량: ${record.quantity}`,
             `소비기한: ${record.expirationDate}`,
             `발견로케이션: ${record.location}`,
-            `발견자: ${record.foundBy}`,
+            `발견자: ${foundByName}`,
             `발견시각: ${foundAt} (한국시간)`,
             `유형: ${record.type === "overstock" ? "과재고" : "부족재고"}`,
           ].join("\n"),

@@ -29,13 +29,18 @@ Slack 앱의 Interactivity & Shortcuts Request URL은 `https://<Worker 도메인
 Socket Mode는 끈 상태로 사용한다. 로컬에서는 `.dev.vars`, 운영에서는 Worker Secret에
 Bot User OAuth Token(`xoxb-…`)을 `SLACK_BOT_TOKEN`으로 설정한다.
 
+발견자 이름 조회에는 Bot Token Scope `users:read`가 필요하다. Slack 앱의 OAuth & Permissions에서
+권한을 추가한 뒤 워크스페이스에 앱을 재설치한다. 토큰이 변경되면 Worker의 `SLACK_BOT_TOKEN`도 갱신한다.
+제출값 검증 후 `users.info`를 최대 1초 동안 조회하며, 표시 이름(`display_name`) → 이름(`real_name`) →
+Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 표시하여 제출 처리를 계속한다.
+
 | 항목 | 처리 방식 |
 | --- | --- |
 | 바코드 | 필수 문자열, 앞자리 0 유지, 최대 100자 |
 | 수량 | 필수, 1 이상의 정수 |
 | 소비기한 | 필수 날짜 선택, 이미 지난 날짜도 허용 |
 | 발견로케이션 | 필수, 하이픈(-) 제거 및 양끝 공백 정리, 최대 100자 |
-| 발견자 | 제출 요청의 `user.id`로 자동 설정 |
+| 발견자 | 제출자의 Slack 프로필 이름으로 표시, 내부 `foundBy`는 `user.id` 유지 |
 | 발견시각 | 제출 요청 수신 시각, 내부 ISO UTC / 화면 한국시간 |
 | 유형 | 필수 선택: 과재고 / 부족재고 |
 
