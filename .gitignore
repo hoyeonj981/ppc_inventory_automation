@@ -8,3 +8,4 @@ node_modules/
 .DS_Store
 .wrangler/
 .worker-configuration.d.ts
+AGENTS.md
