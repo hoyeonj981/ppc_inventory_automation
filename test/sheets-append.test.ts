@@ -43,7 +43,7 @@ describe("Google Sheets append", () => {
     expect(init?.method).toBe("POST");
     expect(init?.headers).toEqual({ Authorization: "Bearer test-token", "Content-Type": "application/json" });
     expect(JSON.parse(init?.body as string)).toEqual({ majorDimension: "ROWS", values: [[
-      "001234", 3, "2027-03-01", "A0102", "호연", "2027-01-15T08:00:00.000Z", "과재고",
+      "001234", 3, "2027-03-01", "A0102", "호연", "2027-01-15T17:00:00.000+09:00", "과재고",
     ]] });
     expect(timeout).toHaveBeenCalledExactlyOnceWith(15000);
     expect(headerInit?.signal).toBe(init?.signal);

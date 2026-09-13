@@ -75,7 +75,7 @@ describe("inventory submission through Google storage", () => {
       expect(ack.view.title.text).toBe("저장 중");
       await waitOnExecutionContext(ctx);
       expect(savedBody).toEqual({ majorDimension: "ROWS", values: [[
-        "001234", 3, "2027-03-01", "A0102", "호연", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/), "부족재고",
+        "001234", 3, "2027-03-01", "A0102", "호연", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*\+09:00$/), "부족재고",
       ]] });
       expect(completedView?.external_id).toBe(ack.view.external_id);
       expect(completedView?.title.text).toBe("저장 완료");

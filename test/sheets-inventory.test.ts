@@ -21,9 +21,10 @@ describe("inventory sheet row", () => {
     const row = toInventorySheetRow(source, " 호연 ");
     expect(row).toEqual([
       "0012345678901", 3, "2027-03-01", "A0102", "호연",
-      "2027-01-15T23:30:00.000Z", label,
+      "2027-01-16T08:30:00.000+09:00", label,
     ]);
     expect(source.foundBy).toBe("U_SUBMITTER");
+    expect(source.foundAt).toBe("2027-01-15T23:30:00.000Z");
     expect(typeof row[0]).toBe("string");
     expect(typeof row[1]).toBe("number");
   });
@@ -45,7 +46,7 @@ describe("inventory sheet row", () => {
     const body = { majorDimension: "ROWS", values: [toInventorySheetRow(result.record, "호연")] };
     expect(body.values).toEqual([[
       "0012345678901", 3, "2027-03-01", "A0102", "호연",
-      "2027-01-15T23:30:00.000Z", "과재고",
+      "2027-01-16T08:30:00.000+09:00", "과재고",
     ]]);
   });
 
@@ -53,5 +54,19 @@ describe("inventory sheet row", () => {
     const row = toInventorySheetRow({ ...record, barcode: "=1+2" }, '호연, "재고팀"');
     expect(row[0]).toBe("=1+2");
     expect(row[4]).toBe('호연, "재고팀"');
+  });
+
+  it.each([
+    ["2027-01-15T08:00:00.123Z", "2027-01-15T17:00:00.123+09:00"],
+    ["2027-01-15T15:00:00.000Z", "2027-01-16T00:00:00.000+09:00"],
+    ["2027-01-31T23:30:00.000Z", "2027-02-01T08:30:00.000+09:00"],
+    ["2027-12-31T23:30:00.000Z", "2028-01-01T08:30:00.000+09:00"],
+    ["2028-02-28T23:30:00.000Z", "2028-02-29T08:30:00.000+09:00"],
+    ["2027-01-15T17:00:00.000+09:00", "2027-01-15T17:00:00.000+09:00"],
+  ])("formats %s in Seoul time without changing the instant", (input, expected) => {
+    const row = toInventorySheetRow({ ...record, foundAt: input });
+    expect(row[5]).toBe(expected);
+    expect(new Date(row[5]).getTime()).toBe(new Date(input).getTime());
+    expect(row[2]).toBe(record.expirationDate);
   });
 });

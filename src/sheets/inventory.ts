@@ -17,13 +17,16 @@ export function toInventorySheetRow(
   foundAt: string,
   type: string,
 ] {
+  // Asia/Seoul uses UTC+09:00. Keep the offset explicit instead of labelling local time as UTC.
+  const foundAt = new Date(new Date(record.foundAt).getTime() + 9 * 60 * 60 * 1000)
+    .toISOString().replace("Z", "+09:00");
   return [
     record.barcode,
     record.quantity,
     record.expirationDate,
     record.location,
     foundByName.trim() || record.foundBy,
-    record.foundAt,
+    foundAt,
     record.type === "overstock" ? "과재고" : "부족재고",
   ];
 }
