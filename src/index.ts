@@ -2,7 +2,7 @@ import { handleSlackCommand } from "./slack/commands";
 import { handleSlackInteraction } from "./slack/interactions";
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, _env: Cloudflare.Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
@@ -17,9 +17,9 @@ export default {
     }
 
     if (url.pathname === "/slack/interactions") {
-      return handleSlackInteraction(request);
+      return handleSlackInteraction(request, ctx);
     }
 
     return new Response("Not Found", { status: 404 });
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Cloudflare.Env>;

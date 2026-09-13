@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { withEnv } from "cloudflare:workers";
+import { env, withEnv } from "cloudflare:workers";
+import { createExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 
@@ -26,7 +27,7 @@ function signedRequest(payload = body, timestamp = now) {
 
 async function send(request: Request, signingSecret = secret, botToken = "xoxb-test") {
   return (await withEnv({ SLACK_SIGNING_SECRET: signingSecret, SLACK_BOT_TOKEN: botToken }, async () => {
-    const response = await worker.fetch(request);
+    const response = await worker.fetch(request, env, createExecutionContext());
     return {
       status: response.status,
       text: await response.text(),

@@ -8,7 +8,7 @@ export const inventoryModal = {
   type: "modal",
   callback_id: INVENTORY_CALLBACK_ID,
   title: plainText("재고 발견 입력"),
-  submit: plainText("확인"),
+  submit: plainText("저장"),
   close: plainText("취소"),
   blocks: [
     {
@@ -66,7 +66,7 @@ export const inventoryModal = {
       type: "context",
       elements: [
         plainText(
-          "발견자는 제출자의 Slack 프로필 이름으로 표시됩니다(조회 실패 시 Slack ID). 발견시각은 제출 요청 수신 시각입니다. 현재는 입력 확인만 가능하며 데이터는 저장되지 않습니다.",
+          "발견자는 제출자의 Slack 프로필 이름으로 표시됩니다(조회 실패 시 Slack ID). 발견시각은 제출 요청 수신 시각입니다. 저장을 누르면 Google Sheets에 기록됩니다.",
         ),
       ],
     },
@@ -169,14 +169,18 @@ export function parseInventoryValues(
   };
 }
 
-export function inventoryConfirmation(record: InventoryRecord, foundByName = record.foundBy) {
+export function inventoryConfirmation(
+  record: InventoryRecord,
+  foundByName = record.foundBy,
+  status: "saving" | "saved" | "unconfirmed" = "saving",
+) {
   const foundAt = new Date(record.foundAt).toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
     hour12: false,
   });
   return {
     type: "modal",
-    title: plainText("입력 내용 확인"),
+    title: plainText({ saving: "저장 중", saved: "저장 완료", unconfirmed: "저장 확인 필요" }[status]),
     close: plainText("닫기"),
     blocks: [
       {
@@ -196,9 +200,11 @@ export function inventoryConfirmation(record: InventoryRecord, foundByName = rec
       {
         type: "context",
         elements: [
-          plainText(
-            "입력 내용을 확인했습니다. 데이터는 아직 저장되지 않았습니다.",
-          ),
+          plainText({
+            saving: "Google Sheets에 저장 중입니다. 완료될 때까지 기다려 주세요. 화면을 닫아도 저장 처리는 계속됩니다.",
+            saved: "Google Sheets에 저장했습니다.",
+            unconfirmed: "저장 여부를 확인하지 못했습니다. 중복 입력을 피하려면 시트와 Worker 로그를 확인한 뒤 다시 제출해 주세요.",
+          }[status]),
         ],
       },
     ],
