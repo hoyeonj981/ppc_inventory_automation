@@ -45,10 +45,94 @@ Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 �
 | 유형 | 필수 선택: 과재고 / 부족재고 |
 
 제출 요청도 Slack 서명 검증 후 처리한다. 입력 오류는 모달의 해당 항목에 표시한다.
-정상 제출 시 입력값과 자동 항목을 확인 화면에 표시한다.
-**현재는 입력 확인 단계이며, Google Sheets나 다른 저장소에 데이터를 저장하지 않는다.**
-화면의 버튼도 `저장` 대신 `확인`으로 표시한다.
+정상 제출 시 이름을 조회하고 저장 중 화면을 즉시 반환한다. Google 인증과 행 추가는
+`ctx.waitUntil()`로 백그라운드에서 처리하며, 완료 후 Slack `views.update`로 결과 화면을 표시한다.
+`저장 완료`는 Sheets API가 한 행(7개 셀)의 추가를 확인한 경우에만 표시한다.
+오류·시간 초과에는 `저장 확인 필요`를 표시한다. 이때 이미 행이 추가되었을 수도 있으므로
+시트를 먼저 확인하고 다시 제출해야 한다. 모달을 닫아 결과 화면을 표시할 수 없더라도 저장 결과는 Worker 로그에 남는다.
 
-검증: `npm run typecheck`, `npm test`. 테스트는 Slack API를 모킹하므로 실제 모달이나 메시지를 보내지 않는다.
+## Google Sheets 행 변환
+
+`parseInventoryValues`가 모달 입력을 검증하고 정규화한 `InventoryRecord`를 만든다.
+`src/sheets/inventory.ts`의 `toInventorySheetRow(record, foundByName)`는 이 레코드를 시트 한 행으로 변환한다.
+발견자 이름은 기존 `getSlackUserName` 조회 결과를 전달하며, 생략하거나 공백이면 Slack ID로 대체한다.
+
+| 열 | 값 | 자료형 |
+| --- | --- | --- |
+| A | 바코드 | 문자열, 앞자리 0 유지 |
+| B | 수량 | 숫자 |
+| C | 소비기한 | `YYYY-MM-DD` 문자열 |
+| D | 발견로케이션 | 하이픈이 제거된 문자열 |
+| E | 발견자 | 프로필 이름, 조회 실패 시 Slack ID |
+| F | 발견시각 | 기존 UTC ISO 8601 문자열, 예: `2027-01-15T23:30:00.000Z` |
+| G | 유형 | `과재고` 또는 `부족재고` |
+
+Sheets API에 전달하는 본문은 다음과 같다.
+
+```ts
+const body = {
+  majorDimension: "ROWS",
+  values: [toInventorySheetRow(record, foundByName)],
+};
+```
+
+저장 시 `valueInputOption=RAW`를 사용해야 바코드의 앞자리 0을 보존하고,
+`=`로 시작하는 입력값을 수식으로 해석하지 않는다. 수량은 숫자로 전달하고 날짜·시각은 텍스트로 저장한다.
+규격: [Google Sheets 값 쓰기](https://developers.google.com/workspace/sheets/api/guides/values).
+
+## Google Sheets 인증 및 배포
+
+Google Cloud에서 Sheets API를 활성화하고, 대상 스프레드시트를 서비스 계정 이메일에 **편집자**로 공유한다.
+대상 탭의 A1:G1에는 위 열 순서대로 헤더를 준비한다. 행은 해당 탭의 A:G 데이터 표 아래에 추가하며,
+`INSERT_ROWS`로 새 행을 삽입한다. 코드에서 시트나 헤더를 자동 생성하지 않는다.
+
+| 변수 | 값 | 배포 설정 |
+| --- | --- | --- |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | 서비스 계정 JSON의 `client_email` | Secret |
+| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | JSON의 `private_key`, PEM 형식 | Secret |
+| `GOOGLE_INVENTORY_SHEET_ID` | 스프레드시트 URL의 `/d/` 뒤 ID | 일반 변수 또는 Secret |
+| `GOOGLE_INVENTORY_SHEET_TAB_NAME` | 탭 이름과 정확히 일치하는 문자열 | 일반 변수 또는 Secret |
+
+로컬에서는 `.dev.vars.example`의 키 이름을 참고해 `.dev.vars`에 값을 설정한다.
+비공개 키의 실제 줄바꿈과 `\n` 문자열을 모두 지원한다. JSON 파일 경로는 Worker에서 사용하지 않는다.
+`.dev.vars`는 Git에 포함하지 않으며 자동으로 배포되지 않는다.
+
+배포할 Worker에 아래 이름으로 등록한다. 각 명령의 입력 프롬프트에 **값만** 붙여 넣는다.
+네 항목 모두 Secret으로 등록해도 동작한다. Slack Secret 두 개도 기존과 같이 필요하다.
+
+```bash
+npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_EMAIL
+npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+npx wrangler secret put GOOGLE_INVENTORY_SHEET_ID
+npx wrangler secret put GOOGLE_INVENTORY_SHEET_TAB_NAME
+npm run deploy
+```
+
+실제 키·JSON 파일 내용을 소스 코드나 `wrangler.jsonc`에 넣지 않는다.
+프로젝트 설정의 `keep_vars: true`는 대시보드에서 관리하는 일반 변수를 유지하기 위한 옵션이다.
+
+인증은 서비스 계정 JWT(`RS256`, Sheets scope)로 액세스 토큰을 발급받는다.
+요청 제한은 사용자 이름 조회 1초, Google 토큰 발급 5초, 시트 추가 10초, Slack 결과 갱신 2초이다.
+Google 토큰·시트 응답 본문이나 입력값 전체는 로그로 남기지 않는다.
+
+```bash
+npx wrangler tail ppc-inventory-automation --format pretty
+```
+
+- `inventory.saved`: Sheets가 저장을 확인함
+- `inventory.save_unconfirmed`: 설정·인증·시트 접근 오류 또는 저장 결과 불명확, `reason` 확인
+- `inventory.status_update_failed`: 결과 모달 갱신 실패, 함께 기록된 `status`로 저장 결과 확인
+
+로그의 `submissionId`로 한 제출의 저장과 화면 갱신 결과를 연결할 수 있다.
+결과 모달이 아직 생성되지 않았으면 **화면 갱신만** 최대 3회 시도한다.
+시트 추가는 자동 재시도하지 않는다. `waitUntil`은 영속 큐가 아니므로 전달·중복 방지를 보장하지 않으며,
+같은 입력을 다시 제출하거나 Slack이 요청을 재전송하면 중복 행이 생길 수 있다.
+엄격한 재시도·중복 방지가 필요하면 별도의 영속 큐와 저장된 제출 식별자가 필요하다.
+
+참고: [서비스 계정 인증](https://developers.google.com/identity/protocols/oauth2/service-account),
+[Sheets 행 추가](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append),
+[Worker waitUntil](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil).
+
+검증: `npm run typecheck`, `npm test`. 테스트는 Slack과 Google API를 모킹하므로 실제 메시지나 시트 행을 만들지 않는다.
 
 규격: [Slack slash command 공식 문서](https://docs.slack.dev/interactivity/implementing-slash-commands/).
