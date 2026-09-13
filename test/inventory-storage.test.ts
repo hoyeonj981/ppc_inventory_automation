@@ -8,7 +8,7 @@ import worker from "../src/index";
 describe("inventory submission through Google storage", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("connects signed input, profile lookup, token exchange, append and completion modal", async () => {
+  it.each([false, true])("connects signed input through storage with existing headers: %s", async (hasHeaders) => {
     const pair = await generateKeyPair("RS256", { extractable: true });
     const privateKey = await exportPKCS8(pair.privateKey);
     const calls: string[] = [];
@@ -22,6 +22,16 @@ describe("inventory submission through Google storage", () => {
       }
       if (url.hostname === "oauth2.googleapis.com" && url.pathname === "/token") {
         return Response.json({ access_token: "test-google-token", token_type: "Bearer" });
+      }
+      if (url.hostname === "sheets.googleapis.com" && decodeURIComponent(url.pathname).endsWith("!A1:G1")) {
+        if (init?.method === "PUT") {
+          expect(hasHeaders).toBe(false);
+          expect(JSON.parse(init.body as string)).toEqual({ majorDimension: "ROWS", values: [[
+            "바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형",
+          ]] });
+          return Response.json({ updatedRows: 1, updatedCells: 7 });
+        }
+        return Response.json(hasHeaders ? { values: [["기존 헤더"]] } : {});
       }
       if (url.hostname === "sheets.googleapis.com" && url.pathname.endsWith(":append")) {
         expect(init?.headers).toMatchObject({ Authorization: "Bearer test-google-token" });
@@ -69,11 +79,13 @@ describe("inventory submission through Google storage", () => {
       ]] });
       expect(completedView?.external_id).toBe(ack.view.external_id);
       expect(completedView?.title.text).toBe("저장 완료");
-      expect(calls).toHaveLength(4);
+      expect(calls).toHaveLength(hasHeaders ? 5 : 6);
       expect(calls[0]).toBe("slack.com/api/users.info");
       expect(calls[1]).toBe("oauth2.googleapis.com/token");
       expect(calls[2]).toMatch(/^sheets.googleapis.com\//);
-      expect(calls[3]).toBe("slack.com/api/views.update");
+      expect(decodeURIComponent(calls[2]).endsWith("!A1:G1")).toBe(true);
+      expect(calls.at(-2)?.endsWith(":append")).toBe(true);
+      expect(calls.at(-1)).toBe("slack.com/api/views.update");
     });
   });
 });
