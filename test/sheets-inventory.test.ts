@@ -6,7 +6,7 @@ const record: InventoryRecord = {
   barcode: "0012345678901",
   quantity: 3,
   expirationDate: "2027-03-01",
-  location: "A0102",
+  location: "A-01-02",
   foundBy: "U_SUBMITTER",
   foundAt: "2027-01-15T23:30:00.000Z",
   type: "overstock",
@@ -20,7 +20,7 @@ describe("inventory sheet row", () => {
     const source = Object.freeze({ ...record, type });
     const row = toInventorySheetRow(source, " 호연 ");
     expect(row).toEqual([
-      "0012345678901", 3, "2027-03-01", "A0102", "호연",
+      "0012345678901", 3, "2027-03-01", "A-01-02", "호연",
       "2027-01-16T08:30:00.000+09:00", label,
     ]);
     expect(source.foundBy).toBe("U_SUBMITTER");
@@ -45,7 +45,7 @@ describe("inventory sheet row", () => {
 
     const body = { majorDimension: "ROWS", values: [toInventorySheetRow(result.record, "호연")] };
     expect(body.values).toEqual([[
-      "0012345678901", 3, "2027-03-01", "A0102", "호연",
+      "0012345678901", 3, "2027-03-01", "A-01-02", "호연",
       "2027-01-16T08:30:00.000+09:00", "과재고",
     ]]);
   });

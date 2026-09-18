@@ -60,13 +60,20 @@ describe("inventory submission", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("preserves barcode zeros, normalizes location, and records submitter and submission time", () => {
+  it("preserves barcode zeros and location hyphens while trimming surrounding whitespace", () => {
     const result = parseInventoryValues(submission().view.state.values, "U_SUBMITTER", "2027-01-15T08:00:00.000Z");
     expect(result.record).toEqual({
       barcode: "0012345678901", quantity: 3, expirationDate: "2027-03-01",
-      location: "A0102", foundBy: "U_SUBMITTER", foundAt: "2027-01-15T08:00:00.000Z",
+      location: "A-01-02", foundBy: "U_SUBMITTER", foundAt: "2027-01-15T08:00:00.000Z",
       type: "overstock",
     });
+  });
+
+  it.each(["A0102", "A-01-02", "A--01-02", "-A-01-02-", "A - 01 - 02"])("keeps location %s unchanged apart from surrounding whitespace", (location) => {
+    const payload = submission();
+    payload.view.state.values.location.value.value = ` ${location} `;
+    const result = parseInventoryValues(payload.view.state.values, "U_SUBMITTER", "2027-01-15T08:00:00.000Z");
+    expect(result.record?.location).toBe(location);
   });
 
   it.each(["overstock", "shortage"])("shows pending values for %s and schedules storage", async (type) => {
@@ -78,13 +85,13 @@ describe("inventory submission", () => {
     expect(result.response_action).toBe("update");
     const text = result.view.blocks[0].text?.text;
     expect(text).toContain("0012345678901");
-    expect(text).toContain("A0102");
+    expect(text).toContain("A-01-02");
     expect(text).toContain("U_SUBMITTER");
     expect(text).toContain(new Date(now * 1000).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false }));
     expect(text).toContain(type === "overstock" ? "과재고" : "부족재고");
     expect(result.view.blocks[1].elements?.[0].text).toContain("저장 중");
     expect(saveInventorySubmission).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ barcode: "0012345678901", foundBy: "U_SUBMITTER", type }),
+      expect.objectContaining({ barcode: "0012345678901", location: "A-01-02", foundBy: "U_SUBMITTER", type }),
       "U_SUBMITTER", expect.stringMatching(/^inventory:/),
     );
   });
@@ -164,7 +171,7 @@ describe("inventory submission", () => {
     const payload = submission();
     payload.view.state.values.barcode.value.value = " ";
     payload.view.state.values.expiration_date.value.selected_date = "2027-02-30";
-    payload.view.state.values.location.value.value = "---";
+    payload.view.state.values.location.value.value = "   ";
     payload.view.state.values.type.value.selected_option.value = "other";
     const response = await send(requestFor(payload));
     expect(await response.json()).toMatchObject({ response_action: "errors", errors: {

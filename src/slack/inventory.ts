@@ -54,8 +54,7 @@ export const inventoryModal = {
     {
       type: "input",
       block_id: "location",
-      label: plainText("발견로케이션 (- 없이)"),
-      hint: plainText("입력한 하이픈(-)은 자동으로 제거됩니다."),
+      label: plainText("발견로케이션"),
       element: {
         type: "plain_text_input",
         action_id: "value",
@@ -128,7 +127,7 @@ export function parseInventoryValues(
   const quantityText = text(field("quantity").value);
   const quantity = Number(quantityText);
   const expirationDate = text(field("expiration_date").selected_date);
-  const location = text(field("location").value).replaceAll("-", "").trim();
+  const location = text(field("location").value);
   const type = object(field("type").selected_option).value;
   const errors: Record<string, string> = {};
 

@@ -7,7 +7,7 @@ import type { InventoryRecord } from "../src/slack/inventory";
 
 vi.mock("../src/sheets/auth", () => ({ getGoogleAccessToken: vi.fn() }));
 const record: InventoryRecord = {
-  barcode: "001234", quantity: 3, expirationDate: "2027-03-01", location: "A0102",
+  barcode: "001234", quantity: 3, expirationDate: "2027-03-01", location: "A-01-02",
   foundBy: "U_SUBMITTER", foundAt: "2027-01-15T08:00:00.000Z", type: "overstock",
 };
 async function append(sheetId = "test-sheet", tabName = "재고 '발견'") {
@@ -43,7 +43,7 @@ describe("Google Sheets append", () => {
     expect(init?.method).toBe("POST");
     expect(init?.headers).toEqual({ Authorization: "Bearer test-token", "Content-Type": "application/json" });
     expect(JSON.parse(init?.body as string)).toEqual({ majorDimension: "ROWS", values: [[
-      "001234", 3, "2027-03-01", "A0102", "호연", "2027-01-15T17:00:00.000+09:00", "과재고",
+      "001234", 3, "2027-03-01", "A-01-02", "호연", "2027-01-15T17:00:00.000+09:00", "과재고",
     ]] });
     expect(timeout).toHaveBeenCalledExactlyOnceWith(15000);
     expect(headerInit?.signal).toBe(init?.signal);
