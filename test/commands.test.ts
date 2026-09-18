@@ -7,7 +7,7 @@ import worker from "../src/index";
 const secret = "test-signing-secret";
 const now = 1_800_000_000;
 const body =
-  "command=%2Finventory&text=%EC%9E%AC%EA%B3%A0+%ED%99%95%EC%9D%B8&trigger_id=test-trigger";
+  "command=%2Finventory&text=%EC%9E%AC%EA%B3%A0+%ED%99%95%EC%9D%B8&trigger_id=test-trigger&channel_id=C_CURRENT";
 
 function signedRequest(payload = body, timestamp = now) {
   const signature = createHmac("sha256", secret)
@@ -55,14 +55,17 @@ describe("/slack/commands", () => {
     const requestBody = JSON.parse(options?.body as string);
     expect(requestBody.trigger_id).toBe("test-trigger");
     expect(requestBody.view.callback_id).toBe("inventory_submit");
+    expect(requestBody.view.private_metadata).toBe("C_CURRENT");
+    expect(requestBody.view.blocks.find((block: { block_id: string }) => block.block_id === "found_by").element)
+      .toMatchObject({ type: "external_select", min_query_length: 0 });
     expect(requestBody.view.blocks.filter((block: { type: string }) => block.type === "input")
       .map((block: { block_id: string }) => block.block_id))
-      .toEqual(["type", "barcode", "quantity", "expiration_date", "location"]);
+      .toEqual(["type", "barcode", "quantity", "expiration_date", "location", "found_by"]);
   });
 
   it("accepts a command with no arguments", async () => {
     expect(
-      (await send(signedRequest("command=%2Finventory&text=&trigger_id=test-trigger"))).status,
+      (await send(signedRequest("command=%2Finventory&text=&trigger_id=test-trigger&channel_id=C_CURRENT"))).status,
     ).toBe(200);
   });
 
@@ -122,6 +125,11 @@ describe("/slack/commands", () => {
 
   it("rejects inventory commands without a trigger ID", async () => {
     expect((await send(signedRequest("command=%2Finventory"))).status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects inventory commands without a channel ID", async () => {
+    expect((await send(signedRequest("command=%2Finventory&trigger_id=test-trigger"))).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 

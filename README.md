@@ -17,6 +17,7 @@ Worker에는 `SLACK_SIGNING_SECRET`과 `SLACK_BOT_TOKEN`이 설정되어 있어�
 
 `POST /slack/commands`는 서명을 검증한 뒤 `application/x-www-form-urlencoded` 본문에서
 `command`를 읽는다. `/inventory` 요청의 `trigger_id`로 Slack `views.open`을 호출하고,
+`channel_id`를 모달의 `private_metadata`에 보관한다. 두 값은 모두 필수이다.
 성공하면 빈 HTTP 200 응답을 반환한다. 모달 API 요청에는 2초 제한을 적용하며,
 실패하면 명령어를 실행한 사용자에게 오류 안내를 반환한다.
 
@@ -31,7 +32,22 @@ Bot User OAuth Token(`xoxb-…`)을 `SLACK_BOT_TOKEN`으로 설정한다.
 
 발견자 이름 조회에는 Bot Token Scope `users:read`가 필요하다. Slack 앱의 OAuth & Permissions에서
 권한을 추가한 뒤 워크스페이스에 앱을 재설치한다. 토큰이 변경되면 Worker의 `SLACK_BOT_TOKEN`도 갱신한다.
-제출값 검증 후 `users.info`를 최대 1초 동안 조회하며, 표시 이름(`display_name`) → 이름(`real_name`) →
+발견자 선택 목록을 불러오려면 다음 설정도 필요하다.
+
+- Bot Token Scope에 공개 채널은 `channels:read`, 비공개 채널은 `groups:read`를 추가하고 앱을 재설치한다.
+- 사용할 채널에 앱을 초대한다.
+- Interactivity & Shortcuts → Select Menus → **Options Load URL**을
+  `https://<Worker 도메인>/slack/interactions`로 설정한다.
+
+발견자 목록은 `/inventory`를 실행한 채널을 기준으로 열 때마다 조회한다.
+`conversations.members`와 `users.list`의 페이지를 순회하여 채널의 활성 사용자만 표시하고,
+봇과 비활성 계정은 제외한다. 이름·실명·Slack ID로 검색할 수 있으며 한 번에 최대 100명을 표시한다.
+조회 전체에 2초 제한을 적용하며 권한 부족·시간 초과 시 빈 목록을 반환한다.
+목록이 나타나지 않으면 위 권한, 앱의 채널 참여 여부, Options Load URL을 확인한다.
+
+제출값 검증 후 선택한 사람이 해당 채널의 멤버인지 최대 1초 동안 확인한다.
+채널 정보 누락, 채널 밖의 사용자 선택, 멤버 확인 실패 시 발견자 필드에 오류를 표시하고 저장하지 않는다.
+이후 선택한 사용자의 `users.info`를 최대 1초 동안 조회하며, 표시 이름(`display_name`) → 이름(`real_name`) →
 Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 표시하여 제출 처리를 계속한다.
 
 | 항목 | 처리 방식 |
@@ -40,7 +56,7 @@ Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 �
 | 수량 | 필수, 1 이상의 정수 |
 | 소비기한 | 필수 날짜 선택, 이미 지난 날짜도 허용 |
 | 발견로케이션 | 필수, 하이픈(-) 등 입력 형태 유지, 양끝 공백만 정리, 최대 100자 |
-| 발견자 | 제출자의 Slack 프로필 이름으로 표시, 내부 `foundBy`는 `user.id` 유지 |
+| 발견자 | 필수 선택, 현재 채널 멤버의 프로필 이름으로 표시, 내부 `foundBy`는 선택한 사용자의 Slack ID |
 | 발견시각 | 제출 요청 수신 시각, 내부 ISO UTC / 화면·시트 한국시간 |
 | 유형 | 필수 선택: 과재고 / 부족재고 |
 
@@ -117,7 +133,7 @@ npm run deploy
 프로젝트 설정의 `keep_vars: true`는 대시보드에서 관리하는 일반 변수를 유지하기 위한 옵션이다.
 
 인증은 서비스 계정 JWT(`RS256`, Sheets scope)로 액세스 토큰을 발급받는다.
-요청 제한은 사용자 이름 조회 1초, Google 토큰 발급 5초, 헤더 조회·생성과 시트 추가 합계 15초,
+요청 제한은 선택 목록 조회 합계 2초, 제출 시 채널 멤버 확인 1초, 사용자 이름 조회 1초, Google 토큰 발급 5초, 헤더 조회·생성과 시트 추가 합계 15초,
 Slack 결과 갱신 시도당 2초이다.
 Google 토큰·시트 응답 본문이나 입력값 전체는 로그로 남기지 않는다.
 
@@ -141,4 +157,6 @@ npx wrangler tail ppc-inventory-automation --format pretty
 
 검증: `npm run typecheck`, `npm test`. 테스트는 Slack과 Google API를 모킹하므로 실제 메시지나 시트 행을 만들지 않는다.
 
-규격: [Slack slash command 공식 문서](https://docs.slack.dev/interactivity/implementing-slash-commands/).
+규격: [Slack slash command 공식 문서](https://docs.slack.dev/interactivity/implementing-slash-commands/),
+[외부 데이터 선택 메뉴](https://docs.slack.dev/reference/block-kit/block-elements/select-menu-element/#select-menu-of-external-data-source),
+[채널 멤버 조회](https://docs.slack.dev/reference/methods/conversations.members/).

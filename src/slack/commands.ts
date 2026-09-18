@@ -40,7 +40,11 @@ export async function handleSlackCommand(request: Request): Promise<Response> {
   if (typeof triggerId !== "string" || !triggerId.trim()) {
     return new Response("Missing trigger ID", { status: 400 });
   }
-  if (!(await openInventoryModal(triggerId))) {
+  const channelId = form.get("channel_id");
+  if (typeof channelId !== "string" || !channelId.trim()) {
+    return new Response("Missing channel ID", { status: 400 });
+  }
+  if (!(await openInventoryModal(triggerId, channelId))) {
     return Response.json({
       response_type: "ephemeral",
       text: "입력 화면을 열 수 없습니다. 잠시 후 다시 시도해 주세요.",

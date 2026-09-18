@@ -62,17 +62,28 @@ export const inventoryModal = {
       },
     },
     {
+      type: "input",
+      block_id: "found_by",
+      label: plainText("발견자"),
+      element: {
+        type: "external_select",
+        action_id: "value",
+        min_query_length: 0,
+        placeholder: plainText("현재 채널의 멤버를 선택해 주세요"),
+      },
+    },
+    {
       type: "context",
       elements: [
         plainText(
-          "발견자는 제출자의 Slack 프로필 이름으로 표시됩니다(조회 실패 시 Slack ID). 발견시각은 제출 요청 수신 시각입니다. 저장을 누르면 Google Sheets에 기록됩니다.",
+          "발견자는 현재 채널에서 선택한 멤버입니다. 발견시각은 제출 요청 수신 시각입니다. 저장을 누르면 Google Sheets에 기록됩니다.",
         ),
       ],
     },
   ],
 };
 
-export async function openInventoryModal(triggerId: string): Promise<boolean> {
+export async function openInventoryModal(triggerId: string, channelId: string): Promise<boolean> {
   if (!env.SLACK_BOT_TOKEN) {
     console.error("Missing Slack bot token");
     return false;
@@ -84,7 +95,7 @@ export async function openInventoryModal(triggerId: string): Promise<boolean> {
         Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ trigger_id: triggerId, view: inventoryModal }),
+      body: JSON.stringify({ trigger_id: triggerId, view: { ...inventoryModal, private_metadata: channelId } }),
       // Leave time to acknowledge the slash command within Slack's three-second limit.
       signal: AbortSignal.timeout(2000),
     });
@@ -115,7 +126,6 @@ function object(value: unknown): Record<string, unknown> {
 
 export function parseInventoryValues(
   values: unknown,
-  foundBy: string,
   foundAt: string,
 ):
   | { record: InventoryRecord; errors?: never }
@@ -129,7 +139,9 @@ export function parseInventoryValues(
   const expirationDate = text(field("expiration_date").selected_date);
   const location = text(field("location").value);
   const type = object(field("type").selected_option).value;
+  const foundBy = text(object(field("found_by").selected_option).value);
   const errors: Record<string, string> = {};
+  if (!foundBy) errors.found_by = "현재 채널의 발견자를 선택해 주세요.";
 
   if (!barcode || barcode.length > 100)
     errors.barcode = "바코드를 1~100자로 입력해 주세요.";

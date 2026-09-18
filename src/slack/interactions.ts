@@ -2,6 +2,7 @@ import { INVENTORY_CALLBACK_ID, inventoryConfirmation, parseInventoryValues } fr
 import { verifySlackRequest } from "./verify";
 import { getSlackUserName } from "./users";
 import { saveInventorySubmission } from "./save-inventory";
+import { getChannelMemberIds, getChannelMemberOptions } from "./members";
 
 export async function handleSlackInteraction(request: Request, ctx: ExecutionContext): Promise<Response> {
   const receivedAt = new Date(Date.now()).toISOString();
@@ -29,16 +30,41 @@ export async function handleSlackInteraction(request: Request, ctx: ExecutionCon
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return new Response("Invalid payload", { status: 400 });
   }
-  if (payload?.type !== "view_submission" || payload?.view?.callback_id !== INVENTORY_CALLBACK_ID) {
+  if (payload?.view?.callback_id !== INVENTORY_CALLBACK_ID) {
     return new Response(null, { status: 200 });
   }
+  if (payload.type === "block_suggestion" && payload.block_id === "found_by" && payload.action_id === "value") {
+    const channelId = payload.view.private_metadata;
+    if (typeof channelId !== "string" || !channelId.trim()) return Response.json({ options: [] });
+    try {
+      return Response.json({ options: await getChannelMemberOptions(channelId, typeof payload.value === "string" ? payload.value : "") });
+    } catch {
+      console.warn("Failed to load discovery member options");
+      return Response.json({ options: [] });
+    }
+  }
+  if (payload.type !== "view_submission") return new Response(null, { status: 200 });
   if (typeof payload.user?.id !== "string" || !payload.user.id.trim()) {
     return new Response("Missing user ID", { status: 400 });
   }
 
-  const result = parseInventoryValues(payload.view.state?.values, payload.user.id, receivedAt);
+  const result = parseInventoryValues(payload.view.state?.values, receivedAt);
   if (result.errors) {
     return Response.json({ response_action: "errors", errors: result.errors });
+  }
+
+  const channelId = payload.view.private_metadata;
+  if (typeof channelId !== "string" || !channelId.trim()) {
+    return Response.json({ response_action: "errors", errors: { found_by: "채널 정보를 확인할 수 없습니다. 채널에서 /inventory를 다시 실행해 주세요." } });
+  }
+  try {
+    const memberIds = await getChannelMemberIds(channelId, AbortSignal.timeout(1000));
+    if (!memberIds.has(result.record.foundBy)) {
+      return Response.json({ response_action: "errors", errors: { found_by: "현재 채널의 멤버를 선택해 주세요." } });
+    }
+  } catch {
+    console.warn("Failed to verify discovery channel membership");
+    return Response.json({ response_action: "errors", errors: { found_by: "채널 멤버를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." } });
   }
 
   const foundByName = await getSlackUserName(result.record.foundBy);

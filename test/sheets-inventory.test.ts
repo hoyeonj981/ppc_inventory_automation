@@ -40,7 +40,8 @@ describe("inventory sheet row", () => {
       expiration_date: { value: { selected_date: "2027-03-01" } },
       location: { value: { value: " A-01-02 " } },
       type: { value: { selected_option: { value: "overstock" } } },
-    }, "U_SUBMITTER", record.foundAt);
+      found_by: { value: { selected_option: { value: "U_SUBMITTER" } } },
+    }, record.foundAt);
     if (!result.record) throw new Error("Expected a valid inventory record");
 
     const body = { majorDimension: "ROWS", values: [toInventorySheetRow(result.record, "호연")] };

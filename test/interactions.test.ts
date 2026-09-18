@@ -6,6 +6,9 @@ import worker from "../src/index";
 import { parseInventoryValues } from "../src/slack/inventory";
 import { saveInventorySubmission } from "../src/slack/save-inventory";
 
+import { getChannelMemberIds, getChannelMemberOptions } from "../src/slack/members";
+
+vi.mock("../src/slack/members", () => ({ getChannelMemberIds: vi.fn(), getChannelMemberOptions: vi.fn() }));
 vi.mock("../src/slack/save-inventory", () => ({ saveInventorySubmission: vi.fn() }));
 
 const secret = "test-signing-secret";
@@ -17,7 +20,9 @@ function submission() {
     user: { id: "U_SUBMITTER" },
     view: {
       callback_id: "inventory_submit",
+      private_metadata: "C_CURRENT",
       state: { values: {
+        found_by: { value: { selected_option: { value: "U_SELECTED" } } },
         barcode: { value: { value: "0012345678901" } },
         quantity: { value: { value: "3" } },
         expiration_date: { value: { selected_date: "2027-03-01" } },
@@ -54,17 +59,68 @@ async function send(request: Request) {
 describe("inventory submission", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getChannelMemberIds).mockResolvedValue(new Set(["U_SELECTED", "U_SUBMITTER"]));
     vi.mocked(saveInventorySubmission).mockResolvedValue(undefined);
     vi.spyOn(Date, "now").mockReturnValue(now * 1000);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: true, user: { profile: {} } }));
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("loads member suggestions for the channel that opened the modal", async () => {
+    const options = [{ text: { type: "plain_text", text: "호연" }, value: "U_SELECTED" }];
+    vi.mocked(getChannelMemberOptions).mockResolvedValue(options);
+    const response = await send(requestFor({ ...submission(), type: "block_suggestion", block_id: "found_by", action_id: "value", value: "호" }));
+    expect(await response.json()).toEqual({ options });
+    expect(getChannelMemberOptions).toHaveBeenCalledExactlyOnceWith("C_CURRENT", "호");
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty list if member suggestions cannot be loaded", async () => {
+    vi.mocked(getChannelMemberOptions).mockRejectedValue(new Error("Missing scope"));
+    const response = await send(requestFor({ ...submission(), type: "block_suggestion", block_id: "found_by", action_id: "value", value: "" }));
+    expect(await response.json()).toEqual({ options: [] });
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
+  });
+
+  it("verifies the signature before looking up suggestions", async () => {
+    const request = requestFor({ ...submission(), type: "block_suggestion", block_id: "found_by", action_id: "value" });
+    request.headers.delete("x-slack-signature");
+    expect((await send(request)).status).toBe(401);
+    expect(getChannelMemberOptions).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit discovery member selection", async () => {
+    const payload = submission();
+    payload.view.state.values.found_by.value.selected_option.value = "";
+    const response = await send(requestFor(payload));
+    expect(await response.json()).toMatchObject({ response_action: "errors", errors: { found_by: expect.any(String) } });
+    expect(getChannelMemberIds).not.toHaveBeenCalled();
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects a selected member outside the originating channel", async () => {
+    const payload = submission();
+    payload.view.state.values.found_by.value.selected_option.value = "U_OUTSIDE";
+    const response = await send(requestFor(payload));
+    expect(await response.json()).toMatchObject({ response_action: "errors", errors: { found_by: expect.any(String) } });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
+  });
+
+  it("requires the originating channel before saving", async () => {
+    const payload = submission();
+    payload.view.private_metadata = "";
+    const response = await send(requestFor(payload));
+    expect(await response.json()).toMatchObject({ response_action: "errors", errors: { found_by: expect.any(String) } });
+    expect(getChannelMemberIds).not.toHaveBeenCalled();
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
+  });
+
   it("preserves barcode zeros and location hyphens while trimming surrounding whitespace", () => {
-    const result = parseInventoryValues(submission().view.state.values, "U_SUBMITTER", "2027-01-15T08:00:00.000Z");
+    const result = parseInventoryValues(submission().view.state.values, "2027-01-15T08:00:00.000Z");
     expect(result.record).toEqual({
       barcode: "0012345678901", quantity: 3, expirationDate: "2027-03-01",
-      location: "A-01-02", foundBy: "U_SUBMITTER", foundAt: "2027-01-15T08:00:00.000Z",
+      location: "A-01-02", foundBy: "U_SELECTED", foundAt: "2027-01-15T08:00:00.000Z",
       type: "overstock",
     });
   });
@@ -72,7 +128,7 @@ describe("inventory submission", () => {
   it.each(["A0102", "A-01-02", "A--01-02", "-A-01-02-", "A - 01 - 02"])("keeps location %s unchanged apart from surrounding whitespace", (location) => {
     const payload = submission();
     payload.view.state.values.location.value.value = ` ${location} `;
-    const result = parseInventoryValues(payload.view.state.values, "U_SUBMITTER", "2027-01-15T08:00:00.000Z");
+    const result = parseInventoryValues(payload.view.state.values, "2027-01-15T08:00:00.000Z");
     expect(result.record?.location).toBe(location);
   });
 
@@ -86,13 +142,13 @@ describe("inventory submission", () => {
     const text = result.view.blocks[0].text?.text;
     expect(text).toContain("0012345678901");
     expect(text).toContain("A-01-02");
-    expect(text).toContain("U_SUBMITTER");
+    expect(text).toContain("U_SELECTED");
     expect(text).toContain(new Date(now * 1000).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false }));
     expect(text).toContain(type === "overstock" ? "과재고" : "부족재고");
     expect(result.view.blocks[1].elements?.[0].text).toContain("저장 중");
     expect(saveInventorySubmission).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ barcode: "0012345678901", location: "A-01-02", foundBy: "U_SUBMITTER", type }),
-      "U_SUBMITTER", expect.stringMatching(/^inventory:/),
+      expect.objectContaining({ barcode: "0012345678901", location: "A-01-02", foundBy: "U_SELECTED", type }),
+      "U_SELECTED", expect.stringMatching(/^inventory:/),
     );
   });
 
@@ -110,9 +166,9 @@ describe("inventory submission", () => {
     [{ display_name: " 호연 ", real_name: "장호연" }, "호연"],
     [{ display_name: " ", real_name: " 장호연 " }, "장호연"],
     [{ display_name: null, real_name: "장호연" }, "장호연"],
-    [{}, "U_SUBMITTER"],
-    [{ display_name: 123, real_name: null }, "U_SUBMITTER"],
-  ])("uses the submitting user's profile name with fallbacks: %j", async (profile, name) => {
+    [{}, "U_SELECTED"],
+    [{ display_name: 123, real_name: null }, "U_SELECTED"],
+  ])("uses the selected user's profile name with fallbacks: %j", async (profile, name) => {
     vi.mocked(fetch).mockResolvedValue(Response.json({ ok: true, user: { profile } }));
     const timeout = vi.spyOn(AbortSignal, "timeout");
     const response = await send(requestFor(submission()));
@@ -121,7 +177,7 @@ describe("inventory submission", () => {
     expect(result.response_action).toBe("update");
     expect(result.view.blocks[0].text.text).toContain(`발견자: ${name}`);
     expect(fetch).toHaveBeenCalledExactlyOnceWith(
-      "https://slack.com/api/users.info?user=U_SUBMITTER",
+      "https://slack.com/api/users.info?user=U_SELECTED",
       expect.objectContaining({ headers: { Authorization: "Bearer xoxb-test" }, signal: expect.any(AbortSignal) }),
     );
     expect(timeout).toHaveBeenCalledWith(1000);
@@ -137,7 +193,7 @@ describe("inventory submission", () => {
     const response = await send(requestFor(submission()));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ response_action: "update", view: {
-      blocks: expect.arrayContaining([expect.objectContaining({ text: expect.objectContaining({ text: expect.stringContaining("발견자: U_SUBMITTER") }) })]),
+      blocks: expect.arrayContaining([expect.objectContaining({ text: expect.objectContaining({ text: expect.stringContaining("발견자: U_SELECTED") }) })]),
     } });
   });
 
@@ -145,26 +201,22 @@ describe("inventory submission", () => {
     vi.mocked(fetch).mockRejectedValue(error);
     const response = await send(requestFor(submission()));
     expect(response.status).toBe(200);
-    expect(JSON.stringify(await response.json())).toContain("발견자: U_SUBMITTER");
+    expect(JSON.stringify(await response.json())).toContain("발견자: U_SELECTED");
   });
 
   it("still confirms when the profile response is not JSON", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response("not JSON"));
     const response = await send(requestFor(submission()));
     expect(response.status).toBe(200);
-    expect(JSON.stringify(await response.json())).toContain("발견자: U_SUBMITTER");
+    expect(JSON.stringify(await response.json())).toContain("발견자: U_SELECTED");
   });
 
-  it("still confirms without a bot token and does not call Slack", async () => {
-    const response = await withEnv({ SLACK_SIGNING_SECRET: secret, SLACK_BOT_TOKEN: "" }, async () => {
-      const ctx = createExecutionContext();
-      const response = await worker.fetch(requestFor(submission()), env, ctx);
-      await waitOnExecutionContext(ctx);
-      return response;
-    }) as Response;
-    expect(response.status).toBe(200);
-    expect(JSON.stringify(await response.json())).toContain("발견자: U_SUBMITTER");
+  it("keeps the modal open when membership lookup fails", async () => {
+    vi.mocked(getChannelMemberIds).mockRejectedValue(new Error("Missing scope"));
+    const response = await send(requestFor(submission()));
+    expect(await response.json()).toMatchObject({ response_action: "errors", errors: { found_by: expect.any(String) } });
     expect(fetch).not.toHaveBeenCalled();
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
   });
 
   it("returns block-specific errors for all invalid fields", async () => {
@@ -189,13 +241,14 @@ describe("inventory submission", () => {
     } });
   });
 
-  it("ignores forged discovery fields and uses the submitting Slack user", async () => {
+  it("uses the selected channel member and ignores a supplied discovery time", async () => {
     const payload = submission();
-    Object.assign(payload.view.state.values, { found_by: { value: { value: "U_OTHER" } }, found_at: { value: { value: "2000-01-01" } } });
+    Object.assign(payload.view.state.values, { found_at: { value: { value: "2000-01-01" } } });
     const response = await send(requestFor(payload));
     const text = JSON.stringify(await response.json());
-    expect(text).toContain("U_SUBMITTER");
-    expect(text).not.toContain("U_OTHER");
+    expect(text).toContain("U_SELECTED");
+    expect(text).not.toContain("U_SUBMITTER");
+    expect(getChannelMemberIds).toHaveBeenCalledWith("C_CURRENT", expect.any(AbortSignal));
     expect(text).not.toContain("2000-01-01");
   });
 
@@ -243,7 +296,7 @@ describe("inventory submission", () => {
         const response = await worker.fetch(requestFor(submission()), env, ctx);
         expect(response.status).toBe(200);
         const result = await response.json() as { view: { external_id: string } };
-        expect(saveInventorySubmission).toHaveBeenCalledWith(expect.any(Object), "U_SUBMITTER", result.view.external_id);
+        expect(saveInventorySubmission).toHaveBeenCalledWith(expect.any(Object), "U_SELECTED", result.view.external_id);
       } finally {
         complete();
         await waitOnExecutionContext(ctx);

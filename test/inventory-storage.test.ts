@@ -17,7 +17,12 @@ describe("inventory submission through Google storage", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = new URL(input as string);
       calls.push(url.hostname + url.pathname);
+      if (url.hostname === "slack.com" && url.pathname === "/api/conversations.members") {
+        expect(url.searchParams.get("channel")).toBe("C_CURRENT");
+        return Response.json({ ok: true, members: ["U_SELECTED", "U_SUBMITTER"] });
+      }
       if (url.hostname === "slack.com" && url.pathname === "/api/users.info") {
+        expect(url.searchParams.get("user")).toBe("U_SELECTED");
         return Response.json({ ok: true, user: { profile: { display_name: "호연" } } });
       }
       if (url.hostname === "oauth2.googleapis.com" && url.pathname === "/token") {
@@ -53,7 +58,8 @@ describe("inventory submission through Google storage", () => {
     }, async () => {
       const payload = {
         type: "view_submission", user: { id: "U_SUBMITTER" },
-        view: { callback_id: "inventory_submit", state: { values: {
+        view: { callback_id: "inventory_submit", private_metadata: "C_CURRENT", state: { values: {
+          found_by: { value: { selected_option: { value: "U_SELECTED" } } },
           barcode: { value: { value: "001234" } },
           quantity: { value: { value: "3" } },
           expiration_date: { value: { selected_date: "2027-03-01" } },
@@ -79,11 +85,12 @@ describe("inventory submission through Google storage", () => {
       ]] });
       expect(completedView?.external_id).toBe(ack.view.external_id);
       expect(completedView?.title.text).toBe("저장 완료");
-      expect(calls).toHaveLength(hasHeaders ? 5 : 6);
-      expect(calls[0]).toBe("slack.com/api/users.info");
-      expect(calls[1]).toBe("oauth2.googleapis.com/token");
-      expect(calls[2]).toMatch(/^sheets.googleapis.com\//);
-      expect(decodeURIComponent(calls[2]).endsWith("!A1:G1")).toBe(true);
+      expect(calls).toHaveLength(hasHeaders ? 6 : 7);
+      expect(calls[0]).toBe("slack.com/api/conversations.members");
+      expect(calls[1]).toBe("slack.com/api/users.info");
+      expect(calls[2]).toBe("oauth2.googleapis.com/token");
+      expect(calls[3]).toMatch(/^sheets.googleapis.com\//);
+      expect(decodeURIComponent(calls[3]).endsWith("!A1:G1")).toBe(true);
       expect(calls.at(-2)?.endsWith(":append")).toBe(true);
       expect(calls.at(-1)).toBe("slack.com/api/views.update");
     });
