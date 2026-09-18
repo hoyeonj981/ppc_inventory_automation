@@ -37,6 +37,9 @@ Bot User OAuth Token(`xoxb-…`)을 `SLACK_BOT_TOKEN`으로 설정한다.
 - Bot Token Scope에 공개 채널은 `channels:read`, 비공개 채널은 `groups:read`를 추가하고 앱을 재설치한다.
 - 사용할 채널에 앱을 초대한다.
 
+채널 보고 게시에는 `chat:write`, 모달 사진 입력에는 `files:read` Bot Token Scope가 필요하다.
+권한을 추가한 뒤 워크스페이스에 앱을 재설치해야 실제 봇 토큰에 반영된다.
+
 발견자 목록은 `/inventory`를 실행할 때 조회해 모달의 기본 선택 메뉴(`static_select`)에 함께 전달한다.
 목록 표시와 이름 검색에는 추가 서버 요청이나 Options Load URL 설정이 필요하지 않다.
 `conversations.members`와 `users.list`의 페이지를 순회하여 채널의 활성 사용자만 표시하고,
@@ -59,18 +62,33 @@ Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 �
 | 발견자 | 필수 선택, 현재 채널 멤버의 프로필 이름으로 표시, 내부 `foundBy`는 선택한 사용자의 Slack ID |
 | 발견시각 | 제출 요청 수신 시각, 내부 ISO UTC / 화면·시트 한국시간 |
 | 유형 | 필수 선택: 과재고 / 부족재고 |
+| 사진 | 선택, JPG/JPEG/PNG/GIF 1장, Slack 파일 ID만 보관 |
 
 제출 요청도 Slack 서명 검증 후 처리한다. 입력 오류는 모달의 해당 항목에 표시한다.
-정상 제출 시 이름을 조회하고 저장 중 화면을 즉시 반환한다. Google 인증과 행 추가는
-`ctx.waitUntil()`로 백그라운드에서 처리하며, 완료 후 Slack `views.update`로 결과 화면을 표시한다.
-`저장 완료`는 Sheets API가 한 행(7개 셀)의 추가를 확인한 경우에만 표시한다.
-오류·시간 초과에는 `저장 확인 필요`를 표시한다. 이때 이미 행이 추가되었을 수도 있으므로
-시트를 먼저 확인하고 다시 제출해야 한다. 모달을 닫아 결과 화면을 표시할 수 없더라도 저장 결과는 Worker 로그에 남는다.
+정상 제출 시 이름을 조회하고 저장 중 화면을 즉시 반환한다. `ctx.waitUntil()`에서 다음 순서로 처리한다.
+
+1. `/inventory`를 실행한 채널에 유형·바코드·수량·로케이션·소비기한·발견자·한국시간의 발견시각을 간략히 게시한다.
+2. 사진이 있으면 이미지 블록의 `slack_file.id`로 함께 표시한다. Worker가 사진을 다운로드하거나 다시 업로드하지 않는다.
+3. `chat.getPermalink`로 보고 메시지 링크를 조회한다.
+4. Google Sheets에 재고 정보와 보고 메시지 링크를 한 행으로 추가한다.
+5. Slack `views.update`로 결과 모달을 표시한다.
+
+`저장 완료`는 채널 게시·링크 조회 후 Sheets API가 한 행(8개 셀)의 추가를 확인한 경우에만 표시한다.
+게시 결과가 불명확하거나 링크 조회에 실패하면 시트에는 행을 추가하지 않는다.
+채널 보고가 게시된 뒤 시트 저장이 실패하면 `채널 보고는 게시되었습니다. 시트 저장 여부를 확인하지 못했습니다`로 안내한다.
+시간 초과 시 이미 메시지나 행이 만들어졌을 수 있으므로, 중복 입력을 피하려면 채널과 시트를 확인한 뒤 다시 제출한다.
+모달을 닫아 결과 화면을 표시할 수 없더라도 확인된 처리 결과는 Worker 로그에 남는다.
+
+사진은 Slack에만 보관한다. 시트의 링크를 열려면 해당 Slack 채널 접근 권한이 필요하며,
+메시지·사진 삭제 및 워크스페이스 보존 정책에 따라 나중에 열리지 않을 수 있다.
+규격: [사진 입력](https://docs.slack.dev/reference/block-kit/block-elements/file-input-element/),
+[Slack 이미지 참조](https://docs.slack.dev/reference/block-kit/composition-objects/slack-file-object/),
+[메시지 링크 조회](https://docs.slack.dev/reference/methods/chat.getPermalink/).
 
 ## Google Sheets 행 변환
 
 `parseInventoryValues`가 모달 입력을 검증하고 정규화한 `InventoryRecord`를 만든다.
-`src/sheets/inventory.ts`의 `toInventorySheetRow(record, foundByName)`는 이 레코드를 시트 한 행으로 변환한다.
+`src/sheets/inventory.ts`의 `toInventorySheetRow(record, foundByName, reportUrl)`는 이 레코드를 시트 한 행으로 변환한다.
 발견자 이름은 기존 `getSlackUserName` 조회 결과를 전달하며, 생략하거나 공백이면 Slack ID로 대체한다.
 
 | 열 | 값 | 자료형 |
@@ -82,13 +100,14 @@ Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 �
 | E | 발견자 | 프로필 이름, 조회 실패 시 Slack ID |
 | F | 발견시각 | 서울(UTC+09:00) ISO 8601 문자열, 예: `2027-01-16T08:30:00.000+09:00` |
 | G | 유형 | `과재고` 또는 `부족재고` |
+| H | 보고 메시지 링크 | Slack 보고 메시지의 HTTPS URL |
 
 Sheets API에 전달하는 본문은 다음과 같다.
 
 ```ts
 const body = {
   majorDimension: "ROWS",
-  values: [toInventorySheetRow(record, foundByName)],
+  values: [toInventorySheetRow(record, foundByName, reportUrl)],
 };
 ```
 
@@ -101,11 +120,13 @@ const body = {
 ## Google Sheets 인증 및 배포
 
 Google Cloud에서 Sheets API를 활성화하고, 대상 스프레드시트를 서비스 계정 이메일에 **편집자**로 공유한다.
-매 제출 시 대상 탭의 A1:G1을 조회하고, 모두 비어 있으면 위 열 순서대로 헤더를 자동 입력한다.
-첫 행에 값이 하나라도 있으면 기존 내용을 그대로 유지하며, 부분적으로 빠진 헤더도 자동 보충하지 않는다.
+매 제출 시 대상 탭의 A1:H1을 조회하고, 모두 비어 있으면 위 열 순서대로 헤더를 자동 입력한다.
+기존 시트는 A1:G1을 유지하고 H1이 비어 있으면 `보고 메시지 링크`만 추가한다.
+H1에 다른 값이 있으면 덮어쓰거나 행을 추가하지 않고 오류를 표시한다. H열은 보고 메시지 링크 전용으로 비워 두어야 한다.
+기존 데이터 행에 메시지 링크를 소급해서 채우지는 않는다. A1:G1의 부분적으로 빠진 헤더도 자동 보충하지 않는다.
 기존 헤더의 순서는 위 표와 맞춰야 한다. 수식은 표시 결과가 비어 있어도 기존 값으로 취급한다.
 헤더 조회·생성에 실패하면 데이터 행을 추가하지 않는다. 탭 자체는 자동 생성하지 않는다.
-행은 해당 탭의 A:G 데이터 표 아래에 `INSERT_ROWS`로 추가한다.
+행은 해당 탭의 A:H 데이터 표 아래에 `INSERT_ROWS`로 추가한다.
 
 | 변수 | 값 | 배포 설정 |
 | --- | --- | --- |
@@ -133,22 +154,25 @@ npm run deploy
 프로젝트 설정의 `keep_vars: true`는 대시보드에서 관리하는 일반 변수를 유지하기 위한 옵션이다.
 
 인증은 서비스 계정 JWT(`RS256`, Sheets scope)로 액세스 토큰을 발급받는다.
-요청 제한은 멤버 조회와 모달 열기 합계 2초, 제출 시 채널 멤버 확인 1초, 사용자 이름 조회 1초, Google 토큰 발급 5초, 헤더 조회·생성과 시트 추가 합계 15초,
-Slack 결과 갱신 시도당 2초이다.
+요청 제한은 멤버 조회와 모달 열기 합계 2초, 제출 시 채널 멤버 확인 1초, 사용자 이름 조회 1초,
+보고 게시와 링크 조회 각각 2초, Google 토큰 발급 5초, 헤더 조회·생성과 시트 추가 합계 15초이다.
+보고 게시부터 시트 저장까지 전체에 22초 제한도 함께 적용한다. 이후 결과 모달 갱신은 시도당 2초, 최대 3회(재시도 간격 200ms)로 제한하여
+`waitUntil`의 응답 후 30초 실행 한도 안에 결과 안내 시간을 확보한다.
 Google 토큰·시트 응답 본문이나 입력값 전체는 로그로 남기지 않는다.
 
 ```bash
 npx wrangler tail ppc-inventory-automation --format pretty
 ```
 
-- `inventory.saved`: Sheets가 저장을 확인함
-- `inventory.save_unconfirmed`: 설정·인증·시트 접근 오류 또는 저장 결과 불명확, `reason` 확인
+- `inventory.report_posted`: Slack이 보고 게시를 확인함, `channelId`와 `messageTs`로 게시 위치 확인
+- `inventory.saved`: 채널 보고와 메시지 링크를 포함한 Sheets 저장을 확인함
+- `inventory.save_unconfirmed`: 처리 오류 또는 결과 불명확, `status`와 `reason` 확인 (`report_unconfirmed`: 게시 불명확, `link_unconfirmed`: 링크 조회 실패, `unconfirmed`: 시트 저장 미확인)
 - `inventory.status_update_failed`: 결과 모달 갱신 실패, 함께 기록된 `status`로 저장 결과 확인
 
 로그의 `submissionId`로 한 제출의 저장과 화면 갱신 결과를 연결할 수 있다.
 결과 모달이 아직 생성되지 않았으면 **화면 갱신만** 최대 3회 시도한다.
-시트 추가는 자동 재시도하지 않는다. `waitUntil`은 영속 큐가 아니므로 전달·중복 방지를 보장하지 않으며,
-같은 입력을 다시 제출하거나 Slack이 요청을 재전송하면 중복 행이 생길 수 있다.
+보고 게시와 시트 추가는 자동 재시도하지 않는다. `waitUntil`은 영속 큐가 아니므로 전달·중복 방지를 보장하지 않으며,
+같은 입력을 다시 제출하거나 Slack이 요청을 재전송하면 중복 메시지·행이 생길 수 있다.
 엄격한 재시도·중복 방지가 필요하면 별도의 영속 큐와 저장된 제출 식별자가 필요하다.
 
 참고: [서비스 계정 인증](https://developers.google.com/identity/protocols/oauth2/service-account),

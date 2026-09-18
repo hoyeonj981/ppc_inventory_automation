@@ -73,7 +73,9 @@ describe("/slack/commands", () => {
     expect(vi.mocked(fetch).mock.calls.every(([, init]) => init?.signal === signal)).toBe(true);
     expect(requestBody.view.blocks.filter((block: { type: string }) => block.type === "input")
       .map((block: { block_id: string }) => block.block_id))
-      .toEqual(["type", "barcode", "quantity", "expiration_date", "location", "found_by"]);
+      .toEqual(["type", "barcode", "quantity", "expiration_date", "location", "found_by", "photo"]);
+    expect(requestBody.view.blocks.find((block: { block_id: string }) => block.block_id === "photo"))
+      .toMatchObject({ optional: true, element: { type: "file_input", filetypes: ["jpg", "jpeg", "png", "gif"], max_files: 1 } });
   });
 
   it("accepts a command with no arguments", async () => {

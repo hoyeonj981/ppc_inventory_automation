@@ -73,10 +73,22 @@ export const inventoryModal = {
       },
     },
     {
+      type: "input",
+      block_id: "photo",
+      optional: true,
+      label: plainText("사진 (JPG, PNG, GIF 1장)"),
+      element: {
+        type: "file_input",
+        action_id: "value",
+        filetypes: ["jpg", "jpeg", "png", "gif"],
+        max_files: 1,
+      },
+    },
+    {
       type: "context",
       elements: [
         plainText(
-          "발견자는 현재 채널에서 선택한 멤버입니다. 발견시각은 제출 요청 수신 시각입니다. 저장을 누르면 Google Sheets에 기록됩니다.",
+          "저장하면 현재 채널에 보고 내용과 사진을 게시하고, Google Sheets에 재고 정보와 보고 메시지 링크를 기록합니다.",
         ),
       ],
     },
@@ -135,6 +147,7 @@ export interface InventoryRecord {
   foundBy: string;
   foundAt: string;
   type: "overstock" | "shortage";
+  photoFileId?: string;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -160,6 +173,21 @@ export function parseInventoryValues(
   const type = object(field("type").selected_option).value;
   const foundBy = text(object(field("found_by").selected_option).value);
   const errors: Record<string, string> = {};
+  const files = field("photo").files;
+  let photoFileId: string | undefined;
+  if (files !== undefined && files !== null) {
+    if (!Array.isArray(files) || files.length > 1) {
+      errors.photo = "사진은 1장만 첨부해 주세요.";
+    } else if (files.length === 1) {
+      const file = object(files[0]);
+      if (typeof file.id !== "string" || !/^F[A-Z0-9]+$/.test(file.id) ||
+          !["jpg", "jpeg", "png", "gif"].includes(text(file.filetype))) {
+        errors.photo = "JPG, PNG, GIF 사진을 첨부해 주세요.";
+      } else {
+        photoFileId = file.id;
+      }
+    }
+  }
   if (!foundBy) errors.found_by = "현재 채널의 발견자를 선택해 주세요.";
 
   if (!barcode || barcode.length > 100)
@@ -195,6 +223,7 @@ export function parseInventoryValues(
       foundBy,
       foundAt,
       type: type as InventoryRecord["type"],
+      ...(photoFileId ? { photoFileId } : {}),
     },
   };
 }
@@ -202,7 +231,7 @@ export function parseInventoryValues(
 export function inventoryConfirmation(
   record: InventoryRecord,
   foundByName = record.foundBy,
-  status: "saving" | "saved" | "unconfirmed" = "saving",
+  status: "saving" | "saved" | "unconfirmed" | "report_unconfirmed" | "link_unconfirmed" = "saving",
 ) {
   const foundAt = new Date(record.foundAt).toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -210,7 +239,7 @@ export function inventoryConfirmation(
   });
   return {
     type: "modal",
-    title: plainText({ saving: "저장 중", saved: "저장 완료", unconfirmed: "저장 확인 필요" }[status]),
+    title: plainText(status === "saving" ? "저장 중" : status === "saved" ? "저장 완료" : "저장 확인 필요"),
     close: plainText("닫기"),
     blocks: [
       {
@@ -231,9 +260,11 @@ export function inventoryConfirmation(
         type: "context",
         elements: [
           plainText({
-            saving: "Google Sheets에 저장 중입니다. 완료될 때까지 기다려 주세요. 화면을 닫아도 저장 처리는 계속됩니다.",
-            saved: "Google Sheets에 저장했습니다.",
-            unconfirmed: "저장 여부를 확인하지 못했습니다. 중복 입력을 피하려면 시트와 Worker 로그를 확인한 뒤 다시 제출해 주세요.",
+            saving: "채널 보고와 Google Sheets 저장 중입니다. 완료될 때까지 기다려 주세요. 화면을 닫아도 처리는 계속됩니다.",
+            saved: "채널에 보고 메시지를 게시하고 재고 정보와 보고 메시지 링크를 Google Sheets에 저장했습니다.",
+            unconfirmed: "채널 보고는 게시되었습니다. 시트 저장 여부를 확인하지 못했습니다. 중복 입력을 피하려면 채널과 시트, Worker 로그를 확인한 뒤 다시 제출해 주세요.",
+            report_unconfirmed: "채널 보고 게시 여부를 확인하지 못해 시트에는 저장하지 않았습니다. 중복 입력을 피하려면 채널과 Worker 로그를 확인한 뒤 다시 제출해 주세요.",
+            link_unconfirmed: "채널 보고는 게시되었지만 메시지 링크를 가져오지 못해 시트에는 저장하지 않았습니다. 중복 입력을 피하려면 채널과 Worker 로그를 확인해 주세요.",
           }[status]),
         ],
       },

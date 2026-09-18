@@ -58,7 +58,7 @@ export async function handleSlackInteraction(request: Request, ctx: ExecutionCon
 
   const foundByName = await getSlackUserName(result.record.foundBy);
   const submissionId = `inventory:${crypto.randomUUID()}`;
-  ctx.waitUntil(saveInventorySubmission(result.record, foundByName, submissionId));
+  ctx.waitUntil(saveInventorySubmission(result.record, foundByName, submissionId, channelId));
   return Response.json({
     response_action: "update",
     view: { ...inventoryConfirmation(result.record, foundByName), external_id: submissionId },

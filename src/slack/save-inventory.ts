@@ -1,21 +1,30 @@
 import { env } from "cloudflare:workers";
 import { appendInventoryRow } from "../sheets/append";
 import { inventoryConfirmation, type InventoryRecord } from "./inventory";
+import { getReportPermalink, postInventoryReport } from "./report";
 
 export async function saveInventorySubmission(
   record: InventoryRecord,
   foundByName: string,
   submissionId: string,
+  channelId: string,
 ): Promise<void> {
-  let status: "saved" | "unconfirmed" = "saved";
+  const signal = AbortSignal.timeout(22000);
+  let status: "saved" | "unconfirmed" | "report_unconfirmed" | "link_unconfirmed" = "report_unconfirmed";
   try {
-    await appendInventoryRow(record, foundByName);
+    const messageTs = await postInventoryReport(record, foundByName, channelId, signal);
+    console.info("inventory.report_posted", { submissionId, channelId, messageTs });
+    status = "link_unconfirmed";
+    const reportUrl = await getReportPermalink(channelId, messageTs, signal);
+    status = "unconfirmed";
+    await appendInventoryRow(record, foundByName, reportUrl, signal);
+    status = "saved";
     console.info("inventory.saved", { submissionId });
   } catch (error) {
-    status = "unconfirmed";
-    // appendInventoryRow only emits sanitized errors, never credentials or response bodies.
+    // API helpers only emit sanitized errors, never credentials or response bodies.
     console.error("inventory.save_unconfirmed", {
       submissionId,
+      status,
       reason: error instanceof Error ? error.message : "Unexpected storage error",
     });
   }

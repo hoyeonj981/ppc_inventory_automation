@@ -16,12 +16,12 @@ describe("inventory sheet row", () => {
   it.each([
     ["overstock", "과재고"],
     ["shortage", "부족재고"],
-  ] as const)("maps %s into seven ordered cells without changing the record", (type, label) => {
+  ] as const)("maps %s into eight ordered cells without changing the record", (type, label) => {
     const source = Object.freeze({ ...record, type });
     const row = toInventorySheetRow(source, " 호연 ");
     expect(row).toEqual([
       "0012345678901", 3, "2027-03-01", "A-01-02", "호연",
-      "2027-01-16T08:30:00.000+09:00", label,
+      "2027-01-16T08:30:00.000+09:00", label, "",
     ]);
     expect(source.foundBy).toBe("U_SUBMITTER");
     expect(source.foundAt).toBe("2027-01-15T23:30:00.000Z");
@@ -47,7 +47,7 @@ describe("inventory sheet row", () => {
     const body = { majorDimension: "ROWS", values: [toInventorySheetRow(result.record, "호연")] };
     expect(body.values).toEqual([[
       "0012345678901", 3, "2027-03-01", "A-01-02", "호연",
-      "2027-01-16T08:30:00.000+09:00", "과재고",
+      "2027-01-16T08:30:00.000+09:00", "과재고", "",
     ]]);
   });
 

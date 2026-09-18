@@ -2,9 +2,12 @@ import { withEnv } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appendInventoryRow } from "../src/sheets/append";
 import { saveInventorySubmission } from "../src/slack/save-inventory";
+import { getReportPermalink, postInventoryReport } from "../src/slack/report";
 import type { InventoryRecord } from "../src/slack/inventory";
 
 vi.mock("../src/sheets/append", () => ({ appendInventoryRow: vi.fn() }));
+vi.mock("../src/slack/report", () => ({ postInventoryReport: vi.fn(), getReportPermalink: vi.fn() }));
+const reportUrl = "https://test.slack.com/archives/C_CURRENT/p1800000000000001";
 const record: InventoryRecord = {
   barcode: "001234", quantity: 3, expirationDate: "2027-03-01", location: "A0102",
   foundBy: "U_SUBMITTER", foundAt: "2027-01-15T08:00:00.000Z", type: "overstock",
@@ -13,12 +16,14 @@ let infoLog: ReturnType<typeof vi.spyOn>;
 let errorLog: ReturnType<typeof vi.spyOn>;
 let warnLog: ReturnType<typeof vi.spyOn>;
 async function save() {
-  await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, () => saveInventorySubmission(record, "호연", "inventory:test"));
+  await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, () => saveInventorySubmission(record, "호연", "inventory:test", "C_CURRENT"));
 }
 
 describe("background inventory storage", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    vi.mocked(postInventoryReport).mockResolvedValue("1800000000.000001");
+    vi.mocked(getReportPermalink).mockResolvedValue(reportUrl);
     vi.mocked(appendInventoryRow).mockResolvedValue(undefined);
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ ok: true }));
     infoLog = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -29,7 +34,10 @@ describe("background inventory storage", () => {
 
   it("saves once, logs success and updates the acknowledgement view", async () => {
     await save();
-    expect(appendInventoryRow).toHaveBeenCalledExactlyOnceWith(record, "호연");
+    expect(postInventoryReport).toHaveBeenCalledExactlyOnceWith(record, "호연", "C_CURRENT", expect.any(AbortSignal));
+    expect(getReportPermalink).toHaveBeenCalledExactlyOnceWith("C_CURRENT", "1800000000.000001", expect.any(AbortSignal));
+    expect(vi.mocked(postInventoryReport).mock.calls[0][3]).toBe(vi.mocked(appendInventoryRow).mock.calls[0][3]);
+    expect(appendInventoryRow).toHaveBeenCalledExactlyOnceWith(record, "호연", reportUrl, expect.any(AbortSignal));
     expect(infoLog).toHaveBeenCalledWith("inventory.saved", { submissionId: "inventory:test" });
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = vi.mocked(fetch).mock.calls[0];
@@ -44,12 +52,41 @@ describe("background inventory storage", () => {
     expect(JSON.stringify(body)).toContain("Google Sheets에 저장했습니다");
   });
 
+  it("does not append or retry when posting the report is unconfirmed", async () => {
+    vi.mocked(postInventoryReport).mockRejectedValue(new Error("Slack report outcome unknown"));
+    await save();
+    expect(postInventoryReport).toHaveBeenCalledTimes(1);
+    expect(getReportPermalink).not.toHaveBeenCalled();
+    expect(appendInventoryRow).not.toHaveBeenCalled();
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string);
+    expect(body.view.title.text).toBe("저장 확인 필요");
+    expect(JSON.stringify(body)).toContain("시트에는 저장하지 않았습니다");
+    expect(errorLog).toHaveBeenCalledWith("inventory.save_unconfirmed", expect.objectContaining({ status: "report_unconfirmed" }));
+  });
+
+  it("distinguishes a posted report with an unavailable permalink and does not append", async () => {
+    vi.mocked(getReportPermalink).mockRejectedValue(new Error("Slack report permalink lookup failed"));
+    await save();
+    expect(postInventoryReport).toHaveBeenCalledTimes(1);
+    expect(appendInventoryRow).not.toHaveBeenCalled();
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string);
+    expect(JSON.stringify(body)).toContain("채널 보고는 게시되었지만 메시지 링크를 가져오지 못해");
+    expect(errorLog).toHaveBeenCalledWith("inventory.save_unconfirmed", expect.objectContaining({ status: "link_unconfirmed" }));
+  });
+
+  it("reserves time for result updates within the waitUntil lifetime", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await save();
+    expect(timeout).toHaveBeenCalledWith(22000);
+    expect(timeout).toHaveBeenCalledWith(2000);
+  });
+
   it("warns users to check the sheet instead of blindly resubmitting after failure", async () => {
     vi.mocked(appendInventoryRow).mockRejectedValue(new Error("Google Sheets append outcome unknown"));
     await save();
-    expect(infoLog).not.toHaveBeenCalled();
+    expect(infoLog).not.toHaveBeenCalledWith("inventory.saved", expect.anything());
     expect(errorLog).toHaveBeenCalledWith("inventory.save_unconfirmed", {
-      submissionId: "inventory:test", reason: "Google Sheets append outcome unknown",
+      submissionId: "inventory:test", status: "unconfirmed", reason: "Google Sheets append outcome unknown",
     });
     const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string);
     expect(body.view.title.text).toBe("저장 확인 필요");

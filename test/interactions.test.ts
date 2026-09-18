@@ -66,6 +66,35 @@ describe("inventory submission", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it.each([undefined, null, []])("accepts an optional empty photo: %j", (files) => {
+    const values = { ...submission().view.state.values, photo: { value: { files } } };
+    const result = parseInventoryValues(values, "2027-01-15T08:00:00.000Z");
+    expect(result.errors).toBeUndefined();
+    expect(result.record?.photoFileId).toBeUndefined();
+  });
+
+  it.each(["jpg", "jpeg", "png", "gif"])("passes a %s photo ID and the channel to background storage", async (filetype) => {
+    const payload = submission();
+    Object.assign(payload.view.state.values, { photo: { value: { files: [{ id: "F123PHOTO", filetype }] } } });
+    expect((await send(requestFor(payload))).status).toBe(200);
+    expect(saveInventorySubmission).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ photoFileId: "F123PHOTO" }), "U_SELECTED", expect.any(String), "C_CURRENT",
+    );
+  });
+
+  it.each([
+    "invalid", [null], [{}], [{ id: "F123", filetype: "pdf" }],
+    [{ id: "https://example.com/photo.jpg", filetype: "jpg" }],
+    [{ id: "F1", filetype: "png" }, { id: "F2", filetype: "png" }],
+  ])("rejects unsupported photo input before side effects: %j", async (files) => {
+    const payload = submission();
+    Object.assign(payload.view.state.values, { photo: { value: { files } } });
+    const response = await send(requestFor(payload));
+    expect(await response.json()).toMatchObject({ response_action: "errors", errors: { photo: expect.any(String) } });
+    expect(getChannelMemberIds).not.toHaveBeenCalled();
+    expect(saveInventorySubmission).not.toHaveBeenCalled();
+  });
+
   it("requires an explicit discovery member selection", async () => {
     const payload = submission();
     payload.view.state.values.found_by.value.selected_option.value = "";
@@ -125,7 +154,7 @@ describe("inventory submission", () => {
     expect(result.view.blocks[1].elements?.[0].text).toContain("저장 중");
     expect(saveInventorySubmission).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ barcode: "0012345678901", location: "A-01-02", foundBy: "U_SELECTED", type }),
-      "U_SELECTED", expect.stringMatching(/^inventory:/),
+      "U_SELECTED", expect.stringMatching(/^inventory:/), "C_CURRENT",
     );
   });
 
@@ -273,7 +302,7 @@ describe("inventory submission", () => {
         const response = await worker.fetch(requestFor(submission()), env, ctx);
         expect(response.status).toBe(200);
         const result = await response.json() as { view: { external_id: string } };
-        expect(saveInventorySubmission).toHaveBeenCalledWith(expect.any(Object), "U_SELECTED", result.view.external_id);
+        expect(saveInventorySubmission).toHaveBeenCalledWith(expect.any(Object), "U_SELECTED", result.view.external_id, "C_CURRENT");
       } finally {
         complete();
         await waitOnExecutionContext(ctx);

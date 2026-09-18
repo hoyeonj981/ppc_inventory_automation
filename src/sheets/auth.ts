@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { importPKCS8, SignJWT } from "jose";
 
-export async function getGoogleAccessToken(): Promise<string> {
+export async function getGoogleAccessToken(signal?: AbortSignal): Promise<string> {
   if (
     !env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() ||
     !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim()
@@ -36,7 +36,7 @@ export async function getGoogleAccessToken(): Promise<string> {
         grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
         assertion,
       }),
-      signal: AbortSignal.timeout(5000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
     });
   } catch {
     throw new Error("Google token request failed or timed out");

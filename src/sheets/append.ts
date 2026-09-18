@@ -16,6 +16,7 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
   if (!response.ok) throw new Error(`Google Sheets header lookup failed (HTTP ${response.status})`);
 
   let hasValues: boolean;
+  let reportHeader: unknown;
   try {
     const result = await response.json() as { values?: unknown };
     const rows = result.values === undefined ? [] : result.values;
@@ -23,10 +24,17 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
       throw new Error("Invalid header rows");
     }
     hasValues = (rows[0] ?? []).some((value: unknown) => value !== "" && value !== null && value !== undefined);
+    reportHeader = rows[0]?.[7];
   } catch {
     throw new Error("Invalid Google Sheets header response");
   }
-  if (hasValues) return;
+  if (hasValues && reportHeader === INVENTORY_SHEET_HEADERS[7]) return;
+  if (reportHeader !== undefined && reportHeader !== null && reportHeader !== "") {
+    throw new Error("Google Sheets column H is already in use; inventory row not appended");
+  }
+  // Upgrade existing seven-column sheets without rewriting their original headers.
+  if (hasValues) url.pathname = url.pathname.replace(/A1%3AH1$/, "H1");
+  const headers = hasValues ? [INVENTORY_SHEET_HEADERS[7]] : [...INVENTORY_SHEET_HEADERS];
 
   url.search = "";
   url.searchParams.set("valueInputOption", "RAW");
@@ -34,7 +42,7 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
     response = await fetch(url.toString(), {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ majorDimension: "ROWS", values: [INVENTORY_SHEET_HEADERS] }),
+      body: JSON.stringify({ majorDimension: "ROWS", values: [headers] }),
       signal,
     });
   } catch {
@@ -43,24 +51,24 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
   if (!response.ok) throw new Error(`Google Sheets header creation failed (HTTP ${response.status})`);
   try {
     const result = await response.json() as { updatedRows?: number; updatedCells?: number };
-    if (result?.updatedRows === 1 && result.updatedCells === INVENTORY_SHEET_HEADERS.length) return;
+    if (result?.updatedRows === 1 && result.updatedCells === headers.length) return;
   } catch {
     // Never log response bodies or proceed with an unconfirmed header write.
   }
   throw new Error("Google Sheets header creation not confirmed; inventory row not appended");
 }
 
-export async function appendInventoryRow(record: InventoryRecord, foundByName: string): Promise<void> {
+export async function appendInventoryRow(record: InventoryRecord, foundByName: string, reportUrl: string, deadline?: AbortSignal): Promise<void> {
   const sheetId = env.GOOGLE_INVENTORY_SHEET_ID?.trim();
   const tabName = env.GOOGLE_INVENTORY_SHEET_TAB_NAME;
   if (!sheetId || !tabName?.trim()) throw new Error("Missing Google inventory sheet configuration");
-  const token = await getGoogleAccessToken();
+  const token = await getGoogleAccessToken(deadline);
   const tab = `'${tabName.replaceAll("'", "''")}'`;
   const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/`;
   // Bound all sheet requests together, leaving time for auth and Slack result updates.
-  const signal = AbortSignal.timeout(15000);
-  await ensureInventoryHeaders(new URL(valuesUrl + encodeURIComponent(`${tab}!A1:G1`)), token, signal);
-  const url = new URL(`${valuesUrl}${encodeURIComponent(`${tab}!A:G`)}:append`);
+  const signal = deadline ? AbortSignal.any([deadline, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000);
+  await ensureInventoryHeaders(new URL(valuesUrl + encodeURIComponent(`${tab}!A1:H1`)), token, signal);
+  const url = new URL(`${valuesUrl}${encodeURIComponent(`${tab}!A:H`)}:append`);
   url.searchParams.set("valueInputOption", "RAW");
   url.searchParams.set("insertDataOption", "INSERT_ROWS");
 
@@ -69,7 +77,7 @@ export async function appendInventoryRow(record: InventoryRecord, foundByName: s
     response = await fetch(url.toString(), {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ majorDimension: "ROWS", values: [toInventorySheetRow(record, foundByName)] }),
+      body: JSON.stringify({ majorDimension: "ROWS", values: [toInventorySheetRow(record, foundByName, reportUrl)] }),
       signal,
     });
   } catch {
@@ -79,7 +87,7 @@ export async function appendInventoryRow(record: InventoryRecord, foundByName: s
   if (!response.ok) throw new Error(`Google Sheets append failed (HTTP ${response.status}); check sheet before retrying`);
   try {
     const result = await response.json() as { updates?: { updatedRows?: number; updatedCells?: number } };
-    if (result?.updates?.updatedRows === 1 && result.updates.updatedCells === 7) return;
+    if (result?.updates?.updatedRows === 1 && result.updates.updatedCells === INVENTORY_SHEET_HEADERS.length) return;
   } catch {
     // Do not log response bodies, which could contain inventory values.
   }
