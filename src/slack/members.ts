@@ -21,8 +21,7 @@ export async function getChannelMemberIds(channelId: string, signal: AbortSignal
   return members;
 }
 
-export async function getChannelMemberOptions(channelId: string, query: string) {
-  const signal = AbortSignal.timeout(2000);
+export async function getChannelMemberOptions(channelId: string, signal: AbortSignal) {
   const memberIds = await getChannelMemberIds(channelId, signal);
   if (memberIds.size === 0) return [];
   const options: { text: { type: string; text: string }; value: string }[] = [];
@@ -41,12 +40,11 @@ export async function getChannelMemberOptions(channelId: string, query: string) 
       throw new Error("Failed to look up channel member names");
     }
     for (const user of result.members) {
-      if (!memberIds.has(user.id) || user.is_bot || user.deleted || user.id === "USLACKBOT") continue;
+      if (!memberIds.delete(user.id) || user.is_bot || user.deleted || user.id === "USLACKBOT") continue;
       const name = user.profile?.display_name?.trim() || user.profile?.real_name?.trim() || user.id;
-      if (![name, user.profile?.real_name || "", user.id].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()))) continue;
       options.push({ text: { type: "plain_text", text: name.slice(0, 75) }, value: user.id });
     }
     cursor = result.response_metadata?.next_cursor?.trim() || "";
-  } while (cursor);
-  return options.sort((a, b) => a.text.text.localeCompare(b.text.text, "ko")).slice(0, 100);
+  } while (cursor && memberIds.size > 0);
+  return options.sort((a, b) => a.text.text.localeCompare(b.text.text, "ko"));
 }

@@ -6,9 +6,9 @@ import worker from "../src/index";
 import { parseInventoryValues } from "../src/slack/inventory";
 import { saveInventorySubmission } from "../src/slack/save-inventory";
 
-import { getChannelMemberIds, getChannelMemberOptions } from "../src/slack/members";
+import { getChannelMemberIds } from "../src/slack/members";
 
-vi.mock("../src/slack/members", () => ({ getChannelMemberIds: vi.fn(), getChannelMemberOptions: vi.fn() }));
+vi.mock("../src/slack/members", () => ({ getChannelMemberIds: vi.fn() }));
 vi.mock("../src/slack/save-inventory", () => ({ saveInventorySubmission: vi.fn() }));
 
 const secret = "test-signing-secret";
@@ -65,29 +65,6 @@ describe("inventory submission", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: true, user: { profile: {} } }));
   });
   afterEach(() => vi.restoreAllMocks());
-
-  it("loads member suggestions for the channel that opened the modal", async () => {
-    const options = [{ text: { type: "plain_text", text: "호연" }, value: "U_SELECTED" }];
-    vi.mocked(getChannelMemberOptions).mockResolvedValue(options);
-    const response = await send(requestFor({ ...submission(), type: "block_suggestion", block_id: "found_by", action_id: "value", value: "호" }));
-    expect(await response.json()).toEqual({ options });
-    expect(getChannelMemberOptions).toHaveBeenCalledExactlyOnceWith("C_CURRENT", "호");
-    expect(saveInventorySubmission).not.toHaveBeenCalled();
-  });
-
-  it("returns an empty list if member suggestions cannot be loaded", async () => {
-    vi.mocked(getChannelMemberOptions).mockRejectedValue(new Error("Missing scope"));
-    const response = await send(requestFor({ ...submission(), type: "block_suggestion", block_id: "found_by", action_id: "value", value: "" }));
-    expect(await response.json()).toEqual({ options: [] });
-    expect(saveInventorySubmission).not.toHaveBeenCalled();
-  });
-
-  it("verifies the signature before looking up suggestions", async () => {
-    const request = requestFor({ ...submission(), type: "block_suggestion", block_id: "found_by", action_id: "value" });
-    request.headers.delete("x-slack-signature");
-    expect((await send(request)).status).toBe(401);
-    expect(getChannelMemberOptions).not.toHaveBeenCalled();
-  });
 
   it("requires an explicit discovery member selection", async () => {
     const payload = submission();

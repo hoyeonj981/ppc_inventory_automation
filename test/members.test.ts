@@ -14,7 +14,7 @@ describe("channel member selection", () => {
       .mockResolvedValueOnce(Response.json({ ok: true, members: [user("U1", "호연"), user("U_OUTSIDE"), { ...user("UBOT"), is_bot: true }], response_metadata: { next_cursor: "users-next" } }))
       .mockResolvedValueOnce(Response.json({ ok: true, members: [{ id: "U2", profile: { real_name: "민수" } }, user("U3", ""), { ...user("UDELETED"), deleted: true }, user("USLACKBOT")] }));
     await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, async () => {
-      const options = await getChannelMemberOptions("C_CURRENT", "");
+      const options = await getChannelMemberOptions("C_CURRENT", AbortSignal.timeout(2000));
       expect(options).toHaveLength(3);
       expect(options).toEqual(expect.arrayContaining([
         { text: { type: "plain_text", text: "호연" }, value: "U1" },
@@ -32,27 +32,16 @@ describe("channel member selection", () => {
     }
   });
 
-  it.each([" 호연 ", "jang", "u_selected"])("searches by display name, real name, and ID: %s", async (query) => {
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(Response.json({ ok: true, members: ["U_SELECTED", "U_OTHER"] }))
-      .mockResolvedValueOnce(Response.json({ ok: true, members: [
-        { id: "U_SELECTED", profile: { display_name: "호연", real_name: "Jang" } }, user("U_OTHER", "민수"),
-      ] }));
-    await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, async () => {
-      expect((await getChannelMemberOptions("C_CURRENT", query)).map((option) => option.value)).toEqual(["U_SELECTED"]);
-    });
-  });
-
-  it("limits results to 100 and can search members beyond that limit", async () => {
+  it("keeps all members when there are more than 100", async () => {
     const members = Array.from({ length: 101 }, (_, i) => user(`U${String(i).padStart(3, "0")}`, "가".repeat(80) + i));
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => Response.json({
       ok: true, members: String(input).includes("conversations.members") ? members.map((member) => member.id) : members,
     }));
     await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, async () => {
-      const options = await getChannelMemberOptions("C_CURRENT", "");
-      expect(options).toHaveLength(100);
+      const options = await getChannelMemberOptions("C_CURRENT", AbortSignal.timeout(2000));
+      expect(options).toHaveLength(101);
       expect(options.every((option) => option.text.text.length <= 75)).toBe(true);
-      expect((await getChannelMemberOptions("C_CURRENT", "U100"))[0].value).toBe("U100");
+      expect(options.some((option) => option.value === "U100")).toBe(true);
     });
   });
 
@@ -66,9 +55,20 @@ describe("channel member selection", () => {
   it("fails without a bot token", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     await withEnv({ SLACK_BOT_TOKEN: "" }, async () => {
-      await expect(getChannelMemberOptions("C_CURRENT", "")).rejects.toThrow();
+      await expect(getChannelMemberOptions("C_CURRENT", AbortSignal.timeout(2000))).rejects.toThrow();
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("stops scanning the workspace after all channel members are accounted for", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json({ ok: true, members: ["U1", "UBOT"] }))
+      .mockResolvedValueOnce(Response.json({ ok: true, members: [user("U1"), { ...user("UBOT"), is_bot: true }], response_metadata: { next_cursor: "unneeded-page" } }));
+    await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, async () => {
+      const options = await getChannelMemberOptions("C_CURRENT", AbortSignal.timeout(2000));
+      expect(options.map((option) => option.value)).toEqual(["U1"]);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not return partial options if a profile page fails", async () => {
@@ -77,7 +77,7 @@ describe("channel member selection", () => {
       .mockResolvedValueOnce(Response.json({ ok: true, members: [user("U1")], response_metadata: { next_cursor: "next" } }))
       .mockRejectedValueOnce(new DOMException("Timed out", "TimeoutError"));
     await withEnv({ SLACK_BOT_TOKEN: "xoxb-test" }, async () => {
-      await expect(getChannelMemberOptions("C_CURRENT", "")).rejects.toThrow();
+      await expect(getChannelMemberOptions("C_CURRENT", AbortSignal.timeout(2000))).rejects.toThrow();
     });
   });
 });

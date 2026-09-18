@@ -39,7 +39,15 @@ async function send(request: Request, signingSecret = secret, botToken = "xoxb-t
 describe("/slack/commands", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(now * 1000);
-    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ ok: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(input as string);
+      if (url.pathname === "/api/conversations.members") return Response.json({ ok: true, members: ["U1", "U2"] });
+      if (url.pathname === "/api/users.list") return Response.json({ ok: true, members: [
+        { id: "U1", profile: { display_name: "호연" } },
+        { id: "U2", profile: { display_name: "민수" } },
+      ] });
+      return Response.json({ ok: true });
+    });
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -47,8 +55,8 @@ describe("/slack/commands", () => {
     const response = await send(signedRequest());
     expect(response.status).toBe(200);
     expect(response.text).toBe("");
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, options] = vi.mocked(fetch).mock.calls[0];
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const [url, options] = vi.mocked(fetch).mock.calls[2];
     expect(url).toBe("https://slack.com/api/views.open");
     expect(options?.method).toBe("POST");
     expect(options?.headers).toMatchObject({ Authorization: "Bearer xoxb-test" });
@@ -57,7 +65,12 @@ describe("/slack/commands", () => {
     expect(requestBody.view.callback_id).toBe("inventory_submit");
     expect(requestBody.view.private_metadata).toBe("C_CURRENT");
     expect(requestBody.view.blocks.find((block: { block_id: string }) => block.block_id === "found_by").element)
-      .toMatchObject({ type: "external_select", min_query_length: 0 });
+      .toMatchObject({ type: "static_select", options: [
+        { text: { type: "plain_text", text: "민수" }, value: "U2" },
+        { text: { type: "plain_text", text: "호연" }, value: "U1" },
+      ] });
+    const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+    expect(vi.mocked(fetch).mock.calls.every(([, init]) => init?.signal === signal)).toBe(true);
     expect(requestBody.view.blocks.filter((block: { type: string }) => block.type === "input")
       .map((block: { block_id: string }) => block.block_id))
       .toEqual(["type", "barcode", "quantity", "expiration_date", "location", "found_by"]);
@@ -67,6 +80,37 @@ describe("/slack/commands", () => {
     expect(
       (await send(signedRequest("command=%2Finventory&text=&trigger_id=test-trigger&channel_id=C_CURRENT"))).status,
     ).toBe(200);
+  });
+
+  it("includes every member in option groups when a channel has more than 100 people", async () => {
+    const members = Array.from({ length: 101 }, (_, index) => ({ id: `U${index}`, profile: { display_name: `멤버 ${index}` } }));
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ ok: true, members: members.map((member) => member.id) }))
+      .mockResolvedValueOnce(Response.json({ ok: true, members }));
+    const response = await send(signedRequest());
+    expect(response.text).toBe("");
+    const view = JSON.parse(vi.mocked(fetch).mock.calls[2][1]?.body as string).view;
+    const element = view.blocks.find((block: { block_id: string }) => block.block_id === "found_by").element;
+    expect(element.options).toBeUndefined();
+    expect(element.option_groups.map((group: { options: unknown[] }) => group.options.length)).toEqual([100, 1]);
+    expect(new Set(element.option_groups.flatMap((group: { options: { value: string }[] }) => group.options.map((option) => option.value))).size).toBe(101);
+  });
+
+  it("reports an empty channel instead of opening an unusable member selector", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ok: true, members: [] }));
+    const response = await send(signedRequest());
+    expect(JSON.parse(response.text)).toMatchObject({ response_type: "ephemeral" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a modal API failure after successfully loading the members", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ ok: true, members: ["U1"] }))
+      .mockResolvedValueOnce(Response.json({ ok: true, members: [{ id: "U1", profile: { display_name: "호연" } }] }))
+      .mockResolvedValueOnce(Response.json({ ok: false, error: "trigger_expired" }));
+    const response = await send(signedRequest());
+    expect(JSON.parse(response.text)).toMatchObject({ response_type: "ephemeral" });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("rejects unsigned requests before parsing the body", async () => {

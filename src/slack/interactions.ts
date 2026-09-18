@@ -2,7 +2,7 @@ import { INVENTORY_CALLBACK_ID, inventoryConfirmation, parseInventoryValues } fr
 import { verifySlackRequest } from "./verify";
 import { getSlackUserName } from "./users";
 import { saveInventorySubmission } from "./save-inventory";
-import { getChannelMemberIds, getChannelMemberOptions } from "./members";
+import { getChannelMemberIds } from "./members";
 
 export async function handleSlackInteraction(request: Request, ctx: ExecutionContext): Promise<Response> {
   const receivedAt = new Date(Date.now()).toISOString();
@@ -30,20 +30,9 @@ export async function handleSlackInteraction(request: Request, ctx: ExecutionCon
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return new Response("Invalid payload", { status: 400 });
   }
-  if (payload?.view?.callback_id !== INVENTORY_CALLBACK_ID) {
+  if (payload?.type !== "view_submission" || payload?.view?.callback_id !== INVENTORY_CALLBACK_ID) {
     return new Response(null, { status: 200 });
   }
-  if (payload.type === "block_suggestion" && payload.block_id === "found_by" && payload.action_id === "value") {
-    const channelId = payload.view.private_metadata;
-    if (typeof channelId !== "string" || !channelId.trim()) return Response.json({ options: [] });
-    try {
-      return Response.json({ options: await getChannelMemberOptions(channelId, typeof payload.value === "string" ? payload.value : "") });
-    } catch {
-      console.warn("Failed to load discovery member options");
-      return Response.json({ options: [] });
-    }
-  }
-  if (payload.type !== "view_submission") return new Response(null, { status: 200 });
   if (typeof payload.user?.id !== "string" || !payload.user.id.trim()) {
     return new Response("Missing user ID", { status: 400 });
   }

@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { getChannelMemberOptions } from "./members";
 
 export const INVENTORY_CALLBACK_ID = "inventory_submit";
 
@@ -66,9 +67,8 @@ export const inventoryModal = {
       block_id: "found_by",
       label: plainText("발견자"),
       element: {
-        type: "external_select",
+        type: "static_select",
         action_id: "value",
-        min_query_length: 0,
         placeholder: plainText("현재 채널의 멤버를 선택해 주세요"),
       },
     },
@@ -89,15 +89,34 @@ export async function openInventoryModal(triggerId: string, channelId: string): 
     return false;
   }
   try {
+    // Member lookup and views.open share Slack's acknowledgement deadline.
+    const signal = AbortSignal.timeout(2000);
+    const options = await getChannelMemberOptions(channelId, signal);
+    if (options.length === 0 || options.length > 10000) {
+      console.warn("Cannot open inventory modal: no selectable members or too many members");
+      return false;
+    }
+    const selection = options.length <= 100 ? { options } : {
+      option_groups: Array.from({ length: Math.ceil(options.length / 100) }, (_, index) => ({
+        label: plainText(`멤버 ${index * 100 + 1}–${Math.min((index + 1) * 100, options.length)}`),
+        options: options.slice(index * 100, (index + 1) * 100),
+      })),
+    };
+    const view = {
+      ...inventoryModal,
+      private_metadata: channelId,
+      blocks: inventoryModal.blocks.map((block) => block.block_id === "found_by"
+        ? { ...block, element: { ...block.element, ...selection } }
+        : block),
+    };
     const response = await fetch("https://slack.com/api/views.open", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ trigger_id: triggerId, view: { ...inventoryModal, private_metadata: channelId } }),
-      // Leave time to acknowledge the slash command within Slack's three-second limit.
-      signal: AbortSignal.timeout(2000),
+      body: JSON.stringify({ trigger_id: triggerId, view }),
+      signal,
     });
     const result = (await response.json()) as { ok?: boolean };
     if (response.ok && result?.ok === true) return true;
