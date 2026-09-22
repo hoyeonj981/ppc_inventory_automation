@@ -14,6 +14,8 @@ export async function postInventoryReport(
     `발견자: ${foundByName}`,
     `발견시각: ${new Date(record.foundAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false })} (한국시간)`,
   ].join("\n");
+  let httpStatus: number | undefined;
+  let failure = "request_failed";
   try {
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
@@ -27,13 +29,18 @@ export async function postInventoryReport(
       }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]),
     });
-    const result = await response.json() as { ok?: boolean; channel?: string; ts?: string };
+    httpStatus = response.status;
+    failure = "invalid_response";
+    const result = await response.json() as { ok?: boolean; channel?: string; ts?: string; error?: unknown };
     if (response.ok && result?.ok === true && result.channel === channelId &&
         typeof result.ts === "string" && /^\d+\.\d+$/.test(result.ts)) return result.ts;
-  } catch {
+    // Only retain Slack's bounded error code, never response bodies or uploaded file details.
+    if (typeof result?.error === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(result.error)) failure = result.error;
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) failure = "timeout_or_abort";
     // A timeout may occur after Slack has posted the report. Never retry the write here.
   }
-  throw new Error("Slack report outcome unknown; check channel before retrying");
+  throw new Error(`Slack report outcome unknown (HTTP ${httpStatus ?? "unknown"}, error: ${failure}); check channel before retrying`);
 }
 
 export async function getReportPermalink(channelId: string, messageTs: string, signal: AbortSignal): Promise<string> {

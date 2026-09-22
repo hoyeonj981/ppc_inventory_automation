@@ -45,7 +45,30 @@ describe("Slack inventory report", () => {
 
   it("does not leak network errors or repeat a possibly completed post", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("sensitive token"));
-    await expect(postInventoryReport(record, "호연", "C_CURRENT", signal())).rejects.toThrow("Slack report outcome unknown; check channel before retrying");
+    await expect(postInventoryReport(record, "호연", "C_CURRENT", signal())).rejects.toThrow("Slack report outcome unknown (HTTP unknown, error: request_failed); check channel before retrying");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["missing_scope", "not_in_channel", "invalid_blocks", "invalid_auth", "ratelimited"])("preserves the Slack error code %s for diagnosis", async (error) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: false, error, details: "sensitive-body" }));
+    await expect(postInventoryReport(record, "호연", "C_CURRENT", signal())).rejects.toThrow(
+      `Slack report outcome unknown (HTTP 200, error: ${error}); check channel before retrying`,
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not log arbitrary response content as an error code", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: false, error: "sensitive body with credentials" }, { status: 502 }));
+    await expect(postInventoryReport(record, "호연", "C_CURRENT", signal())).rejects.toThrow(
+      "Slack report outcome unknown (HTTP 502, error: invalid_response); check channel before retrying",
+    );
+  });
+
+  it("distinguishes request timeouts without retrying the report", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("sensitive timeout details", "TimeoutError"));
+    await expect(postInventoryReport(record, "호연", "C_CURRENT", signal())).rejects.toThrow(
+      "Slack report outcome unknown (HTTP unknown, error: timeout_or_abort); check channel before retrying",
+    );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
