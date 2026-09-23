@@ -32,7 +32,7 @@ export async function handleSlackCommand(request: Request): Promise<Response> {
     return new Response("Invalid command", { status: 400 });
   }
 
-  if (command !== "/inventory") {
+  if (command !== "/report") {
     return Response.json({ response_type: "ephemeral", text: "지원하지 않는 명령어입니다." });
   }
 

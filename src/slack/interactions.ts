@@ -44,7 +44,7 @@ export async function handleSlackInteraction(request: Request, ctx: ExecutionCon
 
   const channelId = payload.view.private_metadata;
   if (typeof channelId !== "string" || !channelId.trim()) {
-    return Response.json({ response_action: "errors", errors: { found_by: "채널 정보를 확인할 수 없습니다. 채널에서 /inventory를 다시 실행해 주세요." } });
+    return Response.json({ response_action: "errors", errors: { found_by: "채널 정보를 확인할 수 없습니다. 채널에서 /report를 다시 실행해 주세요." } });
   }
   try {
     const memberIds = await getChannelMemberIds(channelId, AbortSignal.timeout(1000));

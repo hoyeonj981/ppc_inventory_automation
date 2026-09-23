@@ -5,7 +5,7 @@
 1. Slack 요청 서명 검증
 2. 가짜 Slack 요청을 이용한 로컬 테스트
 3. /slack/commands 라우트
-4. /inventory 실행 시 모달 열기
+4. /report 실행 시 모달 열기
 5. /slack/interactions에서 제출값 파싱
 6. 입력값 검증
 7. Google Sheets 연동
@@ -16,7 +16,7 @@ Slack 앱의 Slash Commands 설정에서 Request URL을 `https://<Worker 도메�
 Worker에는 `SLACK_SIGNING_SECRET`과 `SLACK_BOT_TOKEN`이 설정되어 있어야 한다.
 
 `POST /slack/commands`는 서명을 검증한 뒤 `application/x-www-form-urlencoded` 본문에서
-`command`를 읽는다. `/inventory` 요청의 `trigger_id`로 Slack `views.open`을 호출하고,
+`command`를 읽는다. `/report` 요청의 `trigger_id`로 Slack `views.open`을 호출하고,
 `channel_id`를 모달의 `private_metadata`에 보관한다. 두 값은 모두 필수이다.
 성공하면 빈 HTTP 200 응답을 반환한다. 멤버 조회와 모달 API 요청 전체에 2초 제한을 적용하며,
 실패하면 명령어를 실행한 사용자에게 오류 안내를 반환한다.
@@ -40,7 +40,7 @@ Bot User OAuth Token(`xoxb-…`)을 `SLACK_BOT_TOKEN`으로 설정한다.
 채널 보고 게시에는 `chat:write`, 모달 사진 입력에는 `files:read` Bot Token Scope가 필요하다.
 권한을 추가한 뒤 워크스페이스에 앱을 재설치해야 실제 봇 토큰에 반영된다.
 
-발견자 목록은 `/inventory`를 실행할 때 조회해 모달의 기본 선택 메뉴(`static_select`)에 함께 전달한다.
+발견자 목록은 `/report`를 실행할 때 조회해 모달의 기본 선택 메뉴(`static_select`)에 함께 전달한다.
 목록 표시와 이름 검색에는 추가 서버 요청이나 Options Load URL 설정이 필요하지 않다.
 `conversations.members`와 `users.list`의 페이지를 순회하여 채널의 활성 사용자만 표시하고,
 봇과 비활성 계정은 제외한다. 채널 멤버를 모두 확인하면 나머지 워크스페이스 사용자는 조회하지 않는다.
@@ -67,7 +67,7 @@ Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 �
 제출 요청도 Slack 서명 검증 후 처리한다. 입력 오류는 모달의 해당 항목에 표시한다.
 정상 제출 시 이름을 조회하고 저장 중 화면을 즉시 반환한다. `ctx.waitUntil()`에서 다음 순서로 처리한다.
 
-1. `/inventory`를 실행한 채널에 유형·바코드·수량·로케이션·소비기한·발견자·한국시간의 발견시각을 간략히 게시한다.
+1. `/report`를 실행한 채널에 유형·바코드·수량·로케이션·소비기한·발견자·한국시간의 발견시각을 간략히 게시한다.
 2. 사진이 있으면 이미지 블록의 `slack_file.id`로 함께 표시한다. Worker가 사진을 다운로드하거나 다시 업로드하지 않는다.
 3. `chat.getPermalink`로 보고 메시지 링크를 조회한다.
 4. Google Sheets에 재고 정보와 보고 메시지 링크를 한 행으로 추가한다.

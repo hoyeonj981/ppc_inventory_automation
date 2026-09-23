@@ -7,7 +7,7 @@ import worker from "../src/index";
 const secret = "test-signing-secret";
 const now = 1_800_000_000;
 const body =
-  "command=%2Finventory&text=%EC%9E%AC%EA%B3%A0+%ED%99%95%EC%9D%B8&trigger_id=test-trigger&channel_id=C_CURRENT";
+  "command=%2Freport&text=%EC%9E%AC%EA%B3%A0+%ED%99%95%EC%9D%B8&trigger_id=test-trigger&channel_id=C_CURRENT";
 
 function signedRequest(payload = body, timestamp = now) {
   const signature = createHmac("sha256", secret)
@@ -51,7 +51,7 @@ describe("/slack/commands", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("opens the inventory modal and acknowledges the command", async () => {
+  it("opens the inventory modal and acknowledges /report", async () => {
     const response = await send(signedRequest());
     expect(response.status).toBe(200);
     expect(response.text).toBe("");
@@ -80,7 +80,7 @@ describe("/slack/commands", () => {
 
   it("accepts a command with no arguments", async () => {
     expect(
-      (await send(signedRequest("command=%2Finventory&text=&trigger_id=test-trigger&channel_id=C_CURRENT"))).status,
+      (await send(signedRequest("command=%2Freport&text=&trigger_id=test-trigger&channel_id=C_CURRENT"))).status,
     ).toBe(200);
   });
 
@@ -154,7 +154,7 @@ describe("/slack/commands", () => {
     },
   );
 
-  it.each(["text=test", "command=", "command=inventory", "command=%2F"])(
+  it.each(["text=test", "command=", "command=report", "command=%2F"])(
     "rejects an invalid command payload: %s",
     async (payload) => {
       expect((await send(signedRequest(payload))).status).toBe(400);
@@ -169,13 +169,13 @@ describe("/slack/commands", () => {
     expect(response.headers.get("allow")).toBe("POST");
   });
 
-  it("rejects inventory commands without a trigger ID", async () => {
-    expect((await send(signedRequest("command=%2Finventory"))).status).toBe(400);
+  it("rejects report commands without a trigger ID", async () => {
+    expect((await send(signedRequest("command=%2Freport"))).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects inventory commands without a channel ID", async () => {
-    expect((await send(signedRequest("command=%2Finventory&trigger_id=test-trigger"))).status).toBe(400);
+  it("rejects report commands without a channel ID", async () => {
+    expect((await send(signedRequest("command=%2Freport&trigger_id=test-trigger"))).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 
