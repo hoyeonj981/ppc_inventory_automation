@@ -147,6 +147,7 @@ export interface InventoryRecord {
   foundBy: string;
   foundAt: string;
   type: "overstock" | "shortage";
+  source?: "app" | "message";
   photoFileId?: string;
 }
 

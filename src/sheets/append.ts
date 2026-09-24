@@ -16,25 +16,32 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
   if (!response.ok) throw new Error(`Google Sheets header lookup failed (HTTP ${response.status})`);
 
   let hasValues: boolean;
-  let reportHeader: unknown;
+  let row: unknown[];
   try {
     const result = await response.json() as { values?: unknown };
     const rows = result.values === undefined ? [] : result.values;
     if (!Array.isArray(rows) || rows.length > 1 || (rows.length === 1 && !Array.isArray(rows[0]))) {
       throw new Error("Invalid header rows");
     }
-    hasValues = (rows[0] ?? []).some((value: unknown) => value !== "" && value !== null && value !== undefined);
-    reportHeader = rows[0]?.[7];
+    row = rows[0] ?? [];
+    hasValues = row.some((value) => value !== "" && value !== null && value !== undefined);
   } catch {
     throw new Error("Invalid Google Sheets header response");
   }
-  if (hasValues && reportHeader === INVENTORY_SHEET_HEADERS[7]) return;
-  if (reportHeader !== undefined && reportHeader !== null && reportHeader !== "") {
-    throw new Error("Google Sheets column H is already in use; inventory row not appended");
+  const missing: number[] = [];
+  for (const index of [7, 8]) {
+    if (row[index] === undefined || row[index] === null || row[index] === "") missing.push(index);
+    else if (row[index] !== INVENTORY_SHEET_HEADERS[index]) {
+      throw new Error(`Google Sheets column ${index === 7 ? "H" : "I"} is already in use; inventory row not appended`);
+    }
   }
-  // Upgrade existing seven-column sheets without rewriting their original headers.
-  if (hasValues) url.pathname = url.pathname.replace(/A1%3AH1$/, "H1");
-  const headers = hasValues ? [INVENTORY_SHEET_HEADERS[7]] : [...INVENTORY_SHEET_HEADERS];
+  if (hasValues && missing.length === 0) return;
+  // Only fill missing H/I headers on existing sheets; never rewrite historical rows.
+  if (hasValues) {
+    const range = missing.length === 2 ? "H1:I1" : missing[0] === 7 ? "H1" : "I1";
+    url.pathname = url.pathname.replace(/A1%3AI1$/, encodeURIComponent(range));
+  }
+  const headers = hasValues ? missing.map((index) => INVENTORY_SHEET_HEADERS[index]) : [...INVENTORY_SHEET_HEADERS];
 
   url.search = "";
   url.searchParams.set("valueInputOption", "RAW");
@@ -58,7 +65,7 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
   throw new Error("Google Sheets header creation not confirmed; inventory row not appended");
 }
 
-export async function appendInventoryRow(record: InventoryRecord, foundByName: string, reportUrl: string, deadline?: AbortSignal): Promise<void> {
+export async function appendInventoryRow(record: InventoryRecord, foundByName: string, reportUrl: string, deadline?: AbortSignal, beforeAppend?: () => Promise<void>): Promise<void> {
   const sheetId = env.GOOGLE_INVENTORY_SHEET_ID?.trim();
   const tabName = env.GOOGLE_INVENTORY_SHEET_TAB_NAME;
   if (!sheetId || !tabName?.trim()) throw new Error("Missing Google inventory sheet configuration");
@@ -67,11 +74,13 @@ export async function appendInventoryRow(record: InventoryRecord, foundByName: s
   const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/`;
   // Bound all sheet requests together, leaving time for auth and Slack result updates.
   const signal = deadline ? AbortSignal.any([deadline, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000);
-  await ensureInventoryHeaders(new URL(valuesUrl + encodeURIComponent(`${tab}!A1:H1`)), token, signal);
-  const url = new URL(`${valuesUrl}${encodeURIComponent(`${tab}!A:H`)}:append`);
+  await ensureInventoryHeaders(new URL(valuesUrl + encodeURIComponent(`${tab}!A1:I1`)), token, signal);
+  const url = new URL(`${valuesUrl}${encodeURIComponent(`${tab}!A:I`)}:append`);
   url.searchParams.set("valueInputOption", "RAW");
   url.searchParams.set("insertDataOption", "INSERT_ROWS");
 
+  // The message importer persists its write marker only after auth/header checks succeed.
+  await beforeAppend?.();
   let response: Response;
   try {
     response = await fetch(url.toString(), {

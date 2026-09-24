@@ -1,5 +1,8 @@
 import { handleSlackCommand } from "./slack/commands";
 import { handleSlackInteraction } from "./slack/interactions";
+import { handleSlackEvent } from "./slack/events";
+
+export { MessageImport } from "./slack/message-import";
 
 export default {
   async fetch(request: Request, _env: Cloudflare.Env, ctx: ExecutionContext): Promise<Response> {
@@ -18,6 +21,10 @@ export default {
 
     if (url.pathname === "/slack/interactions") {
       return handleSlackInteraction(request, ctx);
+    }
+
+    if (url.pathname === "/slack/events") {
+      return handleSlackEvent(request, ctx);
     }
 
     return new Response("Not Found", { status: 404 });
