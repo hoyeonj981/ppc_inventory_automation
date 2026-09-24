@@ -28,24 +28,12 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
   } catch {
     throw new Error("Invalid Google Sheets header response");
   }
-  const missing: number[] = [];
-  const column = (index: number) => String.fromCharCode(65 + index);
-  for (const index of [7, 8, 9]) {
-    if (row[index] === undefined || row[index] === null || row[index] === "") missing.push(index);
-    else if (row[index] !== INVENTORY_SHEET_HEADERS[index]) {
-      throw new Error(`Google Sheets column ${column(index)} is already in use; inventory row not appended`);
-    }
-  }
-  if (hasValues && missing.length === 0) return;
-  // Only fill missing H–J headers on existing sheets; never rewrite historical rows.
-  // Headers between missing ones already match, so rewriting them is a no-op.
-  let headers: string[] = [...INVENTORY_SHEET_HEADERS];
   if (hasValues) {
-    const [first, last] = [missing[0], missing[missing.length - 1]];
-    const range = first === last ? `${column(first)}1` : `${column(first)}1:${column(last)}1`;
-    url.pathname = url.pathname.replace(/A1%3AJ1$/, encodeURIComponent(range));
-    headers = headers.slice(first, last + 1);
+    // Never rewrite or append beside headers in a different layout; rows would land in the wrong columns.
+    if (INVENTORY_SHEET_HEADERS.every((header, index) => row[index] === header)) return;
+    throw new Error("Google Sheets headers do not match the expected columns; inventory row not appended");
   }
+  const headers = [...INVENTORY_SHEET_HEADERS];
 
   url.search = "";
   url.searchParams.set("valueInputOption", "RAW");

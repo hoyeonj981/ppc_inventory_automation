@@ -45,11 +45,11 @@ describe("inventory submission through Google storage", () => {
         if (init?.method === "PUT") {
           expect(hasHeaders).toBe(false);
           expect(JSON.parse(init.body as string)).toEqual({ majorDimension: "ROWS", values: [[
-            "바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로", "SKU명",
+            "바코드", "SKU명", "수량", "소비기한(제조기한)", "발견로케이션", "발견자", "발견시각", "유형", "입력경로", "보고 메시지 링크",
           ]] });
           return Response.json({ updatedRows: 1, updatedCells: 10 });
         }
-        return Response.json(hasHeaders ? { values: [["바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로", "SKU명"]] } : {});
+        return Response.json(hasHeaders ? { values: [["바코드", "SKU명", "수량", "소비기한(제조기한)", "발견로케이션", "발견자", "발견시각", "유형", "입력경로", "보고 메시지 링크"]] } : {});
       }
       if (url.hostname === "sheets.googleapis.com" && url.pathname.endsWith(":append")) {
         expect(init?.headers).toMatchObject({ Authorization: "Bearer test-google-token" });
@@ -95,7 +95,7 @@ describe("inventory submission through Google storage", () => {
       expect(ack.view.title.text).toBe("저장 중");
       await waitOnExecutionContext(ctx);
       expect(savedBody).toEqual({ majorDimension: "ROWS", values: [[
-        "001234", 3, "2027-03-01", "A-01-02", "호연", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*\+09:00$/), "부족재고", "https://test.slack.com/archives/C_CURRENT/p1800000000000001", "앱 입력", "",
+        "001234", "N/A", 3, "2027-03-01", "A-01-02", "호연", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*\+09:00$/), "부족재고", "앱 입력", "https://test.slack.com/archives/C_CURRENT/p1800000000000001",
       ]] });
       expect(completedView?.external_id).toBe(ack.view.external_id);
       expect(completedView?.title.text).toBe("저장 완료");

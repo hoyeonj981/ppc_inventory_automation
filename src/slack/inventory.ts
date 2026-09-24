@@ -49,7 +49,7 @@ export const inventoryModal = {
     {
       type: "input",
       block_id: "expiration_date",
-      label: plainText("소비기한"),
+      label: plainText("소비기한(제조기한)"),
       element: { type: "datepicker", action_id: "value" },
     },
     {
@@ -207,7 +207,7 @@ export function parseInventoryValues(
     !Number.isFinite(date.getTime()) ||
     date.toISOString().slice(0, 10) !== expirationDate
   ) {
-    errors.expiration_date = "올바른 소비기한을 선택해 주세요.";
+    errors.expiration_date = "올바른 소비기한(제조기한)을 선택해 주세요.";
   }
   if (!location || location.length > 100)
     errors.location = "발견로케이션을 1~100자로 입력해 주세요.";
@@ -250,7 +250,7 @@ export function inventoryConfirmation(
           [
             `바코드: ${record.barcode}`,
             `수량: ${record.quantity}`,
-            `소비기한: ${record.expirationDate}`,
+            `소비기한(제조기한): ${record.expirationDate}`,
             `발견로케이션: ${record.location}`,
             `발견자: ${foundByName}`,
             `발견시각: ${foundAt} (한국시간)`,
