@@ -51,8 +51,8 @@ describe("/slack/commands", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("opens the inventory modal and acknowledges /report", async () => {
-    const response = await send(signedRequest());
+  it.each(["/report", "/r"])("opens the inventory modal and acknowledges %s", async (command) => {
+    const response = await send(signedRequest(body.replace("%2Freport", encodeURIComponent(command))));
     expect(response.status).toBe(200);
     expect(response.text).toBe("");
     expect(fetch).toHaveBeenCalledTimes(3);
@@ -169,13 +169,13 @@ describe("/slack/commands", () => {
     expect(response.headers.get("allow")).toBe("POST");
   });
 
-  it("rejects report commands without a trigger ID", async () => {
-    expect((await send(signedRequest("command=%2Freport"))).status).toBe(400);
+  it.each(["/report", "/r"])("rejects %s without a trigger ID", async (command) => {
+    expect((await send(signedRequest(`command=${encodeURIComponent(command)}`))).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects report commands without a channel ID", async () => {
-    expect((await send(signedRequest("command=%2Freport&trigger_id=test-trigger"))).status).toBe(400);
+  it.each(["/report", "/r"])("rejects %s without a channel ID", async (command) => {
+    expect((await send(signedRequest(`command=${encodeURIComponent(command)}&trigger_id=test-trigger`))).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 

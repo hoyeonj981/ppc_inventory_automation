@@ -12,11 +12,12 @@
 
 ## Slack command 수신
 
-Slack 앱의 Slash Commands 설정에서 Request URL을 `https://<Worker 도메인>/slack/commands`로 지정한다.
+Slack 앱의 Slash Commands 설정에서 `/report`와 `/r`을 각각 등록하고, 두 명령어의 Request URL을
+동일하게 `https://<Worker 도메인>/slack/commands`로 지정한다. `/r`은 `/report`와 동일하게 재고 발견 입력 모달을 연다.
 Worker에는 `SLACK_SIGNING_SECRET`과 `SLACK_BOT_TOKEN`이 설정되어 있어야 한다.
 
 `POST /slack/commands`는 서명을 검증한 뒤 `application/x-www-form-urlencoded` 본문에서
-`command`를 읽는다. `/report` 요청의 `trigger_id`로 Slack `views.open`을 호출하고,
+`command`를 읽는다. `/report` 또는 `/r` 요청의 `trigger_id`로 Slack `views.open`을 호출하고,
 `channel_id`를 모달의 `private_metadata`에 보관한다. 두 값은 모두 필수이다.
 성공하면 빈 HTTP 200 응답을 반환한다. 멤버 조회와 모달 API 요청 전체에 2초 제한을 적용하며,
 실패하면 명령어를 실행한 사용자에게 오류 안내를 반환한다.
