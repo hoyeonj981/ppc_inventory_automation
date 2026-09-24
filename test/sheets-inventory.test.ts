@@ -13,22 +13,23 @@ const record: InventoryRecord = {
 };
 
 describe("inventory sheet row", () => {
-  it("marks converted messages and keeps missing expiration dates as N/A", () => {
-    const row = toInventorySheetRow({ ...record, source: "message", barcode: "", expirationDate: "" }, "민들레");
-    expect(row[0]).toBe("");
+  it("marks converted messages with their SKU name and keeps missing barcodes and expiration dates as N/A", () => {
+    const row = toInventorySheetRow({ ...record, source: "message", barcode: "", expirationDate: "", skuName: "롯데 찰옥수수 140ml" }, "민들레");
+    expect(row[0]).toBe("N/A");
     expect(row[2]).toBe("N/A");
     expect(row[8]).toBe("메시지 변환");
+    expect(row[9]).toBe("롯데 찰옥수수 140ml");
   });
 
   it.each([
     ["overstock", "과재고"],
     ["shortage", "부족재고"],
-  ] as const)("maps %s into nine ordered cells without changing the record", (type, label) => {
+  ] as const)("maps %s into ten ordered cells without changing the record", (type, label) => {
     const source = Object.freeze({ ...record, type });
     const row = toInventorySheetRow(source, " 호연 ");
     expect(row).toEqual([
       "0012345678901", 3, "2027-03-01", "A-01-02", "호연",
-      "2027-01-16T08:30:00.000+09:00", label, "", "앱 입력",
+      "2027-01-16T08:30:00.000+09:00", label, "", "앱 입력", "",
     ]);
     expect(source.foundBy).toBe("U_SUBMITTER");
     expect(source.foundAt).toBe("2027-01-15T23:30:00.000Z");
@@ -54,7 +55,7 @@ describe("inventory sheet row", () => {
     const body = { majorDimension: "ROWS", values: [toInventorySheetRow(result.record, "호연")] };
     expect(body.values).toEqual([[
       "0012345678901", 3, "2027-03-01", "A-01-02", "호연",
-      "2027-01-16T08:30:00.000+09:00", "과재고", "", "앱 입력",
+      "2027-01-16T08:30:00.000+09:00", "과재고", "", "앱 입력", "",
     ]]);
   });
 

@@ -19,31 +19,31 @@ describe("Google Sheets append", () => {
     vi.clearAllMocks();
     vi.mocked(getGoogleAccessToken).mockResolvedValue("test-token");
     vi.spyOn(globalThis, "fetch")
-      .mockResolvedValue(Response.json({ updates: { updatedRows: 1, updatedCells: 9 } }))
+      .mockResolvedValue(Response.json({ updates: { updatedRows: 1, updatedCells: 10 } }))
       .mockResolvedValueOnce(Response.json({ values: [INVENTORY_SHEET_HEADERS] }));
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("appends nine RAW values to the configured tab without overwriting rows", async () => {
+  it("appends ten RAW values to the configured tab without overwriting rows", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     await append();
     expect(fetch).toHaveBeenCalledTimes(2);
     const [headerInput, headerInit] = vi.mocked(fetch).mock.calls[0];
     const headerUrl = new URL(headerInput as string);
-    expect(decodeURIComponent(headerUrl.pathname)).toBe("/v4/spreadsheets/test-sheet/values/'재고 ''발견'''!A1:I1");
+    expect(decodeURIComponent(headerUrl.pathname)).toBe("/v4/spreadsheets/test-sheet/values/'재고 ''발견'''!A1:J1");
     expect(headerUrl.searchParams.get("majorDimension")).toBe("ROWS");
     expect(headerUrl.searchParams.get("valueRenderOption")).toBe("FORMULA");
     expect(headerInit?.headers).toEqual({ Authorization: "Bearer test-token" });
     const [input, init] = vi.mocked(fetch).mock.calls[1];
     const url = new URL(input as string);
     expect(url.origin).toBe("https://sheets.googleapis.com");
-    expect(decodeURIComponent(url.pathname)).toBe("/v4/spreadsheets/test-sheet/values/'재고 ''발견'''!A:I:append");
+    expect(decodeURIComponent(url.pathname)).toBe("/v4/spreadsheets/test-sheet/values/'재고 ''발견'''!A:J:append");
     expect(url.searchParams.get("valueInputOption")).toBe("RAW");
     expect(url.searchParams.get("insertDataOption")).toBe("INSERT_ROWS");
     expect(init?.method).toBe("POST");
     expect(init?.headers).toEqual({ Authorization: "Bearer test-token", "Content-Type": "application/json" });
     expect(JSON.parse(init?.body as string)).toEqual({ majorDimension: "ROWS", values: [[
-      "001234", 3, "2027-03-01", "A-01-02", "호연", "2027-01-15T17:00:00.000+09:00", "과재고", "https://test.slack.com/archives/C_CURRENT/p1800000000000001", "앱 입력",
+      "001234", 3, "2027-03-01", "A-01-02", "호연", "2027-01-15T17:00:00.000+09:00", "과재고", "https://test.slack.com/archives/C_CURRENT/p1800000000000001", "앱 입력", "",
     ]] });
     expect(timeout).toHaveBeenCalledExactlyOnceWith(15000);
     expect(headerInit?.signal).toBe(init?.signal);
@@ -100,45 +100,67 @@ describe("Google Sheets append", () => {
   it.each([{}, { values: [] }, { values: [[]] }, { values: [["", "", "", "", "", "", ""]] }])("creates an empty header row before appending: %j", async (headerBody) => {
     vi.mocked(fetch).mockReset()
       .mockResolvedValueOnce(Response.json(headerBody))
-      .mockResolvedValueOnce(Response.json({ updatedRows: 1, updatedCells: 9 }))
-      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 9 } }));
+      .mockResolvedValueOnce(Response.json({ updatedRows: 1, updatedCells: 10 }))
+      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 10 } }));
     await append();
     expect(fetch).toHaveBeenCalledTimes(3);
     const [input, init] = vi.mocked(fetch).mock.calls[1];
     const url = new URL(input as string);
-    expect(decodeURIComponent(url.pathname).endsWith("'재고 ''발견'''!A1:I1")).toBe(true);
+    expect(decodeURIComponent(url.pathname).endsWith("'재고 ''발견'''!A1:J1")).toBe(true);
     expect(url.searchParams.get("valueInputOption")).toBe("RAW");
     expect(init?.method).toBe("PUT");
     expect(JSON.parse(init?.body as string)).toEqual({ majorDimension: "ROWS", values: [[
-      "바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로",
+      "바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로", "SKU명",
     ]] });
     expect(vi.mocked(fetch).mock.calls.map(([, options]) => options?.method ?? "GET")).toEqual(["GET", "PUT", "POST"]);
     expect(vi.mocked(fetch).mock.calls.every(([, options]) => options?.signal === init?.signal)).toBe(true);
   });
 
-  it.each([["사용자 지정 헤더"], ["", "수량"], [0], [false], [" "], ['=""']])("adds only H1:I1 while preserving existing first-row values: %j", async (...row) => {
+  it.each([["사용자 지정 헤더"], ["", "수량"], [0], [false], [" "], ['=""']])("adds only H1:J1 while preserving existing first-row values: %j", async (...row) => {
     vi.mocked(fetch).mockReset()
       .mockResolvedValueOnce(Response.json({ values: [row] }))
-      .mockResolvedValueOnce(Response.json({ updatedRows: 1, updatedCells: 2 }))
-      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 9 } }));
+      .mockResolvedValueOnce(Response.json({ updatedRows: 1, updatedCells: 3 }))
+      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 10 } }));
     await append();
     expect(fetch).toHaveBeenCalledTimes(3);
     const [input, init] = vi.mocked(fetch).mock.calls[1];
-    expect(decodeURIComponent(new URL(input as string).pathname).endsWith("!H1:I1")).toBe(true);
-    expect(JSON.parse(init?.body as string)).toEqual({ majorDimension: "ROWS", values: [["보고 메시지 링크", "입력 경로"]] });
+    expect(decodeURIComponent(new URL(input as string).pathname).endsWith("!H1:J1")).toBe(true);
+    expect(JSON.parse(init?.body as string)).toEqual({ majorDimension: "ROWS", values: [["보고 메시지 링크", "입력 경로", "SKU명"]] });
     expect(vi.mocked(fetch).mock.calls.map(([, options]) => options?.method ?? "GET")).toEqual(["GET", "PUT", "POST"]);
   });
 
-  it("adds the source header to a legacy eight-column sheet without rewriting its headers or rows", async () => {
+  it.each([
+    [8, "!I1:J1", ["입력 경로", "SKU명"]],
+    [9, "!J1", ["SKU명"]],
+  ])("adds missing headers to a legacy %s-column sheet without rewriting its headers or rows", async (width, range, headers) => {
     vi.mocked(fetch).mockReset()
-      .mockResolvedValueOnce(Response.json({ values: [INVENTORY_SHEET_HEADERS.slice(0, 8)] }))
+      .mockResolvedValueOnce(Response.json({ values: [INVENTORY_SHEET_HEADERS.slice(0, width)] }))
+      .mockResolvedValueOnce(Response.json({ updatedRows: 1, updatedCells: headers.length }))
+      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 10 } }));
+    await append();
+    const [input, init] = vi.mocked(fetch).mock.calls[1];
+    expect(decodeURIComponent(new URL(input as string).pathname).endsWith(range)).toBe(true);
+    expect(JSON.parse(init?.body as string).values).toEqual([headers]);
+    expect(vi.mocked(fetch).mock.calls.map(([, options]) => options?.method ?? "GET")).toEqual(["GET", "PUT", "POST"]);
+  });
+
+  it("fills a gap between present headers without touching the others", async () => {
+    vi.mocked(fetch).mockReset()
+      .mockResolvedValueOnce(Response.json({ values: [[...INVENTORY_SHEET_HEADERS.slice(0, 8), "", "SKU명"]] }))
       .mockResolvedValueOnce(Response.json({ updatedRows: 1, updatedCells: 1 }))
-      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 9 } }));
+      .mockResolvedValueOnce(Response.json({ updates: { updatedRows: 1, updatedCells: 10 } }));
     await append();
     const [input, init] = vi.mocked(fetch).mock.calls[1];
     expect(decodeURIComponent(new URL(input as string).pathname).endsWith("!I1")).toBe(true);
     expect(JSON.parse(init?.body as string).values).toEqual([["입력 경로"]]);
-    expect(vi.mocked(fetch).mock.calls.map(([, options]) => options?.method ?? "GET")).toEqual(["GET", "PUT", "POST"]);
+  });
+
+  it("does not overwrite an unrelated J column or append to it", async () => {
+    vi.mocked(fetch).mockReset().mockResolvedValueOnce(Response.json({ values: [[
+      ...INVENTORY_SHEET_HEADERS.slice(0, 9), "기존 메모",
+    ]] }));
+    await expect(append()).rejects.toThrow("column J is already in use");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("does not overwrite an unrelated I column or append to it", async () => {
@@ -162,9 +184,9 @@ describe("Google Sheets append", () => {
     vi.mocked(fetch).mockReset().mockImplementation(async (_input, init) => {
       if (init?.method === "PUT") {
         headers = JSON.parse(init.body as string).values[0];
-        return Response.json({ updatedRows: 1, updatedCells: 9 });
+        return Response.json({ updatedRows: 1, updatedCells: 10 });
       }
-      if (init?.method === "POST") return Response.json({ updates: { updatedRows: 1, updatedCells: 9 } });
+      if (init?.method === "POST") return Response.json({ updates: { updatedRows: 1, updatedCells: 10 } });
       return Response.json({ values: headers.length ? [headers] : [] });
     });
     await append();

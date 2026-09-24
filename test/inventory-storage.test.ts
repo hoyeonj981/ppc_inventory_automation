@@ -41,20 +41,20 @@ describe("inventory submission through Google storage", () => {
       if (url.hostname === "oauth2.googleapis.com" && url.pathname === "/token") {
         return Response.json({ access_token: "test-google-token", token_type: "Bearer" });
       }
-      if (url.hostname === "sheets.googleapis.com" && decodeURIComponent(url.pathname).endsWith("!A1:I1")) {
+      if (url.hostname === "sheets.googleapis.com" && decodeURIComponent(url.pathname).endsWith("!A1:J1")) {
         if (init?.method === "PUT") {
           expect(hasHeaders).toBe(false);
           expect(JSON.parse(init.body as string)).toEqual({ majorDimension: "ROWS", values: [[
-            "바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로",
+            "바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로", "SKU명",
           ]] });
-          return Response.json({ updatedRows: 1, updatedCells: 9 });
+          return Response.json({ updatedRows: 1, updatedCells: 10 });
         }
-        return Response.json(hasHeaders ? { values: [["바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로"]] } : {});
+        return Response.json(hasHeaders ? { values: [["바코드", "수량", "소비기한", "발견로케이션", "발견자", "발견시각", "유형", "보고 메시지 링크", "입력 경로", "SKU명"]] } : {});
       }
       if (url.hostname === "sheets.googleapis.com" && url.pathname.endsWith(":append")) {
         expect(init?.headers).toMatchObject({ Authorization: "Bearer test-google-token" });
         savedBody = JSON.parse(init?.body as string);
-        return Response.json({ updates: { updatedRows: 1, updatedCells: 9 } });
+        return Response.json({ updates: { updatedRows: 1, updatedCells: 10 } });
       }
       if (url.hostname === "slack.com" && url.pathname === "/api/views.update") {
         completedView = JSON.parse(init?.body as string).view;
@@ -95,7 +95,7 @@ describe("inventory submission through Google storage", () => {
       expect(ack.view.title.text).toBe("저장 중");
       await waitOnExecutionContext(ctx);
       expect(savedBody).toEqual({ majorDimension: "ROWS", values: [[
-        "001234", 3, "2027-03-01", "A-01-02", "호연", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*\+09:00$/), "부족재고", "https://test.slack.com/archives/C_CURRENT/p1800000000000001", "앱 입력",
+        "001234", 3, "2027-03-01", "A-01-02", "호연", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*\+09:00$/), "부족재고", "https://test.slack.com/archives/C_CURRENT/p1800000000000001", "앱 입력", "",
       ]] });
       expect(completedView?.external_id).toBe(ack.view.external_id);
       expect(completedView?.title.text).toBe("저장 완료");
@@ -106,7 +106,7 @@ describe("inventory submission through Google storage", () => {
       expect(calls[3]).toBe("slack.com/api/chat.getPermalink");
       expect(calls[4]).toBe("oauth2.googleapis.com/token");
       expect(calls[5]).toMatch(/^sheets.googleapis.com\//);
-      expect(decodeURIComponent(calls[5]).endsWith("!A1:I1")).toBe(true);
+      expect(decodeURIComponent(calls[5]).endsWith("!A1:J1")).toBe(true);
       expect(calls.at(-2)?.endsWith(":append")).toBe(true);
       expect(calls.at(-1)).toBe("slack.com/api/views.update");
     });

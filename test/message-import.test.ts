@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appendInventoryRow } from "../src/sheets/append";
 
 vi.mock("../src/sheets/append", () => ({ appendInventoryRow: vi.fn() }));
-const report = "과재고 발생 보고\n발견 크루명: 민들레\n발견일시/위치: 9월 24일 /A11-11-203\n법적소비기한 경과 여부: N\n전산재고 0, 실재고 1 / 과재고 1개 피박스 이동 완료";
+const report = "과재고 발생 보고\n발견 크루명: 민들레\n발견일시/위치: 9월 24일 /A11-11-203\n법적소비기한 경과 여부: N\nSKU명: 롯데 찰옥수수 140ml\n전산재고 0, 실재고 1 / 과재고 1개 피박스 이동 완료";
 const channel = "C_TEST";
 const timestamp = "1790211600.000001";
 const link = "https://test.slack.com/archives/C_TEST/p1790211600000001";
@@ -36,7 +36,7 @@ describe("persistent message imports", () => {
       expect(await state.storage.get("status")).toBe("saved");
     });
     expect(appendInventoryRow).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      barcode: "", quantity: 1, expirationDate: "", location: "A11-11-203", source: "message",
+      barcode: "", quantity: 1, expirationDate: "", location: "A11-11-203", source: "message", skuName: "롯데 찰옥수수 140ml",
       foundAt: new Date(Number(timestamp) * 1000).toISOString(), foundBy: "U_AUTHOR",
     }), "민들레", link, expect.any(AbortSignal), expect.any(Function));
   });

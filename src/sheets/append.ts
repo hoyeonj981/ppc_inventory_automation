@@ -29,19 +29,23 @@ async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSign
     throw new Error("Invalid Google Sheets header response");
   }
   const missing: number[] = [];
-  for (const index of [7, 8]) {
+  const column = (index: number) => String.fromCharCode(65 + index);
+  for (const index of [7, 8, 9]) {
     if (row[index] === undefined || row[index] === null || row[index] === "") missing.push(index);
     else if (row[index] !== INVENTORY_SHEET_HEADERS[index]) {
-      throw new Error(`Google Sheets column ${index === 7 ? "H" : "I"} is already in use; inventory row not appended`);
+      throw new Error(`Google Sheets column ${column(index)} is already in use; inventory row not appended`);
     }
   }
   if (hasValues && missing.length === 0) return;
-  // Only fill missing H/I headers on existing sheets; never rewrite historical rows.
+  // Only fill missing H–J headers on existing sheets; never rewrite historical rows.
+  // Headers between missing ones already match, so rewriting them is a no-op.
+  let headers: string[] = [...INVENTORY_SHEET_HEADERS];
   if (hasValues) {
-    const range = missing.length === 2 ? "H1:I1" : missing[0] === 7 ? "H1" : "I1";
-    url.pathname = url.pathname.replace(/A1%3AI1$/, encodeURIComponent(range));
+    const [first, last] = [missing[0], missing[missing.length - 1]];
+    const range = first === last ? `${column(first)}1` : `${column(first)}1:${column(last)}1`;
+    url.pathname = url.pathname.replace(/A1%3AJ1$/, encodeURIComponent(range));
+    headers = headers.slice(first, last + 1);
   }
-  const headers = hasValues ? missing.map((index) => INVENTORY_SHEET_HEADERS[index]) : [...INVENTORY_SHEET_HEADERS];
 
   url.search = "";
   url.searchParams.set("valueInputOption", "RAW");
@@ -74,8 +78,8 @@ export async function appendInventoryRow(record: InventoryRecord, foundByName: s
   const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/`;
   // Bound all sheet requests together, leaving time for auth and Slack result updates.
   const signal = deadline ? AbortSignal.any([deadline, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000);
-  await ensureInventoryHeaders(new URL(valuesUrl + encodeURIComponent(`${tab}!A1:I1`)), token, signal);
-  const url = new URL(`${valuesUrl}${encodeURIComponent(`${tab}!A:I`)}:append`);
+  await ensureInventoryHeaders(new URL(valuesUrl + encodeURIComponent(`${tab}!A1:J1`)), token, signal);
+  const url = new URL(`${valuesUrl}${encodeURIComponent(`${tab}!A:J`)}:append`);
   url.searchParams.set("valueInputOption", "RAW");
   url.searchParams.set("insertDataOption", "INSERT_ROWS");
 

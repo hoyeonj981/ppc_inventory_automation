@@ -36,8 +36,9 @@ export function parseInventoryMessage(text: string, authorId: string, messageTs:
   if (quantities.length === 0 || quantities.some((n) => !Number.isSafeInteger(n) || n < 1) || new Set(quantities).size !== 1) {
     throw new Error("과재고·부족재고 수량을 하나로 확인할 수 없습니다. 예: 과재고 1개 또는 수량: 1");
   }
-  // Reject multi-SKU reports even when their quantities happen to be equal.
-  field("SKU\\s*명");
+  // field() also rejects multi-SKU reports even when their quantities happen to be equal.
+  const skuName = field("SKU\\s*명");
+  if (skuName.length > 200) throw new Error("SKU명은 200자 이내로 적어 주세요.");
   const combined = field("발견\\s*(?:일시|일자)\\s*[/／]\\s*(?:위치|로케이션)");
   const locationField = field("(?:발견\\s*)?(?:로케이션|위치)");
   const combinedLocation = combined.match(/[/／]\s*([A-Za-z0-9]+(?:\s*-\s*[A-Za-z0-9]+)+)\s*$/);
@@ -60,7 +61,7 @@ export function parseInventoryMessage(text: string, authorId: string, messageTs:
     foundAt = new Date(`${date}T${fullTime[2].padStart(2, "0")}:${fullTime[3]}:${fullTime[4] ?? "00"}+09:00`).toISOString();
   }
   return {
-    record: { barcode, quantity: quantities[0], expirationDate, location, foundBy: authorId, foundAt, type, source: "message" },
+    record: { barcode, quantity: quantities[0], expirationDate, location, foundBy: authorId, foundAt, type, source: "message", skuName },
     ...(foundByName ? { foundByName } : {}),
   };
 }

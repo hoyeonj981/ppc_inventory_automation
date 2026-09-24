@@ -16,6 +16,7 @@ describe("inventory message conversion", () => {
     expect(parse(report)).toEqual({ foundByName: "민들레", record: {
       barcode: "", quantity: 1, expirationDate: "", location: "A11-11-203", foundBy: "U_AUTHOR",
       foundAt: new Date(Number(timestamp) * 1000).toISOString(), type: "overstock", source: "message",
+      skuName: "롯데 찰옥수수 140ml",
     } });
   });
 
@@ -55,6 +56,14 @@ describe("inventory message conversion", () => {
     expect(() => parse(report.replace("과재고 1개", `과재고 ${value}개`))).toThrow("수량");
   });
 
+  it("leaves the SKU name empty when the report omits it", () => {
+    expect(parse(report.replace("• SKU명: 롯데 찰옥수수 140ml\n", "")).record.skuName).toBe("");
+  });
+
+  it("reads a SKU label with spacing", () => {
+    expect(parse(report.replace("SKU명", "SKU 명")).record.skuName).toBe("롯데 찰옥수수 140ml");
+  });
+
   it("supports correctly grouped counts", () => {
     expect(parse(report.replace("과재고 1개", "과재고 1,234개")).record.quantity).toBe(1234);
   });
@@ -64,6 +73,7 @@ describe("inventory message conversion", () => {
     `${report}\n수량: 2`,
     `${report}\n부족재고 발생 보고`,
     `${report}\nSKU명: 다른 상품`,
+    report.replace("롯데 찰옥수수 140ml", "가".repeat(201)),
     report.replace("/A11-11-203", ""),
     `${report}\n발견로케이션: B-01-02`,
     `${report}\n소비기한: 2027-02-30`,
