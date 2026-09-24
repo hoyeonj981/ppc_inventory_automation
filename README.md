@@ -122,8 +122,8 @@ Slack ID 순으로 표시한다. 권한 부족이나 시간 초과에도 ID로 �
 
 Slack 앱 설정:
 
-1. Bot Token Scopes에 `reactions:read`를 추가하고 워크스페이스에 앱을 재설치한다. 결과 안내에는 기존 `chat:write`, 이름 조회에는 기존 `users:read`를 사용한다.
-2. 변경된 Worker를 배포한다. `wrangler.jsonc`의 `MESSAGE_IMPORTS` 바인딩과 SQLite Durable Object 마이그레이션이 함께 적용된다.
+1. Bot Token Scopes에 `reactions:read`, `reactions:write`를 추가하고 워크스페이스에 앱을 재설치한다. 결과 안내에는 기존 `chat:write`, 이름 조회에는 기존 `users:read`를 사용한다.
+2. 변경된 Worker를 배포한다.
 3. Event Subscriptions를 켜고 Request URL을 `https://<Worker 도메인>/slack/events`로 설정한다.
 4. Subscribe to bot events에 `reaction_added`를 추가하고 저장한다. 사용할 채널에 앱을 초대한다.
 
@@ -134,17 +134,15 @@ Slack 서명을 검증한 이벤트에 바로 응답하고 백그라운드에서
 [반응 대상 메시지 조회](https://docs.slack.dev/reference/methods/reactions.get/),
 [이벤트 수신 설정](https://docs.slack.dev/apis/events-api/).
 
-중복 방지는 워크스페이스·채널·메시지 식별자로 만든 Durable Object에 처리 상태를 보관한다.
-같은 메시지에 여러 사람이 반응하거나 이벤트가 재전송되어도 시트에 다시 추가하지 않는다.
-저장 후 본문을 수정하거나 이모지를 제거해도 이미 저장한 행을 수정·삭제하지 않는다.
-행 추가 요청 이후 시간 초과·오류가 발생하거나 처리가 중단되면 미확인 상태를 유지하고 자동 재저장하지 않는다.
-인증·헤더 확인 등 행 추가 이전의 준비 단계에서 실패하면 설정을 수정한 뒤 다시 반응을 추가해 재시도할 수 있다.
-이 경우 관리자가 시트와 로그를 확인해 누락을 수동 보완해야 한다. 성공한 행을 지워도 반응만으로 재등록되지 않는다.
-Durable Object는 메시지 본문 대신 처리 상태만 보관하며, 이 중복 방지는 부엉이 변환에만 적용된다.
+저장에 성공하면 앱이 원본 메시지에 ✅ `:white_check_mark:` 반응을 남긴다.
+앱이 남긴 ✅가 있는 메시지는 부엉이 반응을 다시 추가해도 저장하지 않는다. 사람이 남긴 ✅는 저장 표시로 보지 않는다.
+다시 저장하려면 앱의 ✅를 제거한 뒤 부엉이 반응을 다시 추가한다. 이미 저장한 행은 수정·삭제하지 않는다.
+로그 성격의 기록이므로 엄밀한 중복 방지는 하지 않는다. 여러 사람이 동시에 반응하거나 ✅ 추가에 실패하면 드물게 중복 행이 생길 수 있다.
+행 추가 요청 이후 시간 초과·오류로 저장 여부를 알 수 없으면 ✅를 남기지 않고 시트 확인을 안내한다.
 
 - `inventory.message_saved`: 메시지 변환 저장 완료
 - `inventory.message_import_failed`: 변환 실패, `writeStarted`가 참이면 시트 저장 미확인
-- `inventory.message_import_unconfirmed`: 처리 결과를 받지 못함
+- `inventory.message_mark_failed`: 저장 후 ✅ 반응 추가 실패
 - `inventory.message_notice_failed`: 사용자 결과 안내 실패, `status`로 처리 결과 확인
 
 로그의 `channelId`와 `messageTs`로 원본 메시지를 추적한다.
