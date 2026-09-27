@@ -14,15 +14,14 @@ export const inventoryModal = {
   blocks: [
     {
       type: "input",
-      block_id: "type",
-      label: plainText("유형"),
+      block_id: "photo",
+      optional: true,
+      label: plainText("사진 (JPG, PNG, GIF 1장)"),
       element: {
-        type: "static_select",
+        type: "file_input",
         action_id: "value",
-        options: [
-          { text: plainText("과재고"), value: "overstock" },
-          { text: plainText("부족재고"), value: "shortage" },
-        ],
+        filetypes: ["jpg", "jpeg", "png", "gif"],
+        max_files: 1,
       },
     },
     {
@@ -37,6 +36,35 @@ export const inventoryModal = {
     },
     {
       type: "input",
+      block_id: "location",
+      label: plainText("발견로케이션"),
+      element: {
+        type: "plain_text_input",
+        action_id: "value",
+        max_length: 100,
+      },
+    },
+    {
+      type: "input",
+      block_id: "type",
+      label: plainText("유형"),
+      element: {
+        type: "static_select",
+        action_id: "value",
+        options: [
+          { text: plainText("과재고"), value: "overstock" },
+          { text: plainText("부족재고"), value: "shortage" },
+        ],
+      },
+    },
+    {
+      type: "input",
+      block_id: "expiration_date",
+      label: plainText("소비기한(제조기한)"),
+      element: { type: "datepicker", action_id: "value" },
+    },
+    {
+      type: "input",
       block_id: "quantity",
       label: plainText("수량"),
       element: {
@@ -48,40 +76,12 @@ export const inventoryModal = {
     },
     {
       type: "input",
-      block_id: "expiration_date",
-      label: plainText("소비기한(제조기한)"),
-      element: { type: "datepicker", action_id: "value" },
-    },
-    {
-      type: "input",
-      block_id: "location",
-      label: plainText("발견로케이션"),
-      element: {
-        type: "plain_text_input",
-        action_id: "value",
-        max_length: 100,
-      },
-    },
-    {
-      type: "input",
       block_id: "found_by",
       label: plainText("발견자"),
       element: {
         type: "static_select",
         action_id: "value",
         placeholder: plainText("현재 채널의 멤버를 선택해 주세요"),
-      },
-    },
-    {
-      type: "input",
-      block_id: "photo",
-      optional: true,
-      label: plainText("사진 (JPG, PNG, GIF 1장)"),
-      element: {
-        type: "file_input",
-        action_id: "value",
-        filetypes: ["jpg", "jpeg", "png", "gif"],
-        max_files: 1,
       },
     },
     {
