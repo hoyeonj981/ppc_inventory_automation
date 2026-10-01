@@ -3,11 +3,23 @@
   "name": "ppc-inventory-automation",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-10",
+  "assets": {
+    "directory": "./public"
+  },
   "keep_vars": true,
-  // MessageImport was replaced by the bot's ✅ reaction; v2 deletes the deployed class and its stored state.
   "migrations": [
-    { "tag": "v1-message-import", "new_sqlite_classes": ["MessageImport"] },
-    { "tag": "v2-remove-message-import", "deleted_classes": ["MessageImport"] }
+    {
+      "tag": "v1-message-import",
+      "new_sqlite_classes": [
+        "MessageImport"
+      ]
+    },
+    {
+      "tag": "v2-remove-message-import",
+      "deleted_classes": [
+        "MessageImport"
+      ]
+    }
   ],
   "observability": {
     "enabled": true
