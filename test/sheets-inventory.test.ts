@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toInventorySheetRow } from "../src/sheets/inventory";
-import { parseInventoryValues, type InventoryRecord } from "../src/slack/inventory";
+import type { InventoryRecord } from "../src/core/inventory";
+import { parseInventoryValues } from "../src/slack/inventory";
 
 const record: InventoryRecord = {
   barcode: "0012345678901",

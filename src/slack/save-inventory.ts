@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { appendInventoryRow } from "../sheets/append";
-import { inventoryConfirmation, type InventoryRecord } from "./inventory";
+import type { InventoryRecord } from "../core/inventory";
+import { inventoryConfirmation } from "./inventory";
 import { getReportPermalink, postInventoryReport } from "./report";
 
 export async function saveInventorySubmission(

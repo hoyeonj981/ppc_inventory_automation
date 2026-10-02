@@ -1,4 +1,4 @@
-import type { InventoryRecord } from "../slack/inventory";
+import type { InventoryRecord } from "../core/inventory";
 
 export const INVENTORY_SHEET_HEADERS = [
   "바코드", "SKU명", "수량", "소비기한(제조기한)", "발견로케이션", "발견자", "발견시각", "유형", "입력경로", "보고 메시지 링크",

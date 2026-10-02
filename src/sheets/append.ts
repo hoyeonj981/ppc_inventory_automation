@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getGoogleAccessToken } from "./auth";
 import { INVENTORY_SHEET_HEADERS, toInventorySheetRow } from "./inventory";
-import type { InventoryRecord } from "../slack/inventory";
+import type { InventoryRecord } from "../core/inventory";
 
 async function ensureInventoryHeaders(url: URL, token: string, signal: AbortSignal): Promise<void> {
   url.searchParams.set("majorDimension", "ROWS");

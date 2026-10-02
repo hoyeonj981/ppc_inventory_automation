@@ -1,7 +1,7 @@
 import { withEnv } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getReportPermalink, postInventoryReport } from "../src/slack/report";
-import type { InventoryRecord } from "../src/slack/inventory";
+import type { InventoryRecord } from "../src/core/inventory";
 
 const record: InventoryRecord = {
   barcode: "001234", quantity: 3, expirationDate: "2027-03-01", location: "A-01-02",

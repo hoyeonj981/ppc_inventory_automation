@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appendInventoryRow } from "../src/sheets/append";
 import { saveInventorySubmission } from "../src/slack/save-inventory";
 import { getReportPermalink, postInventoryReport } from "../src/slack/report";
-import type { InventoryRecord } from "../src/slack/inventory";
+import type { InventoryRecord } from "../src/core/inventory";
 
 vi.mock("../src/sheets/append", () => ({ appendInventoryRow: vi.fn() }));
 vi.mock("../src/slack/report", () => ({ postInventoryReport: vi.fn(), getReportPermalink: vi.fn() }));

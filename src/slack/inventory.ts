@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import type { InventoryRecord } from "../core/inventory";
 import { getChannelMemberOptions } from "./members";
 
 export const INVENTORY_CALLBACK_ID = "inventory_submit";
@@ -137,19 +138,6 @@ export async function openInventoryModal(triggerId: string, channelId: string): 
   }
   console.error("Failed to open inventory modal");
   return false;
-}
-
-export interface InventoryRecord {
-  barcode: string;
-  quantity: number;
-  expirationDate: string;
-  location: string;
-  foundBy: string;
-  foundAt: string;
-  type: "overstock" | "shortage";
-  source?: "app" | "message";
-  skuName?: string;
-  photoFileId?: string;
 }
 
 function object(value: unknown): Record<string, unknown> {

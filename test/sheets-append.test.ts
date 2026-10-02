@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appendInventoryRow } from "../src/sheets/append";
 import { getGoogleAccessToken } from "../src/sheets/auth";
 import { INVENTORY_SHEET_HEADERS } from "../src/sheets/inventory";
-import type { InventoryRecord } from "../src/slack/inventory";
+import type { InventoryRecord } from "../src/core/inventory";
 
 vi.mock("../src/sheets/auth", () => ({ getGoogleAccessToken: vi.fn() }));
 const record: InventoryRecord = {

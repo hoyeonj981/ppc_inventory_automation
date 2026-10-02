@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import type { InventoryRecord } from "./inventory";
+import type { InventoryRecord } from "../core/inventory";
 
 export async function postInventoryReport(
   record: InventoryRecord,
